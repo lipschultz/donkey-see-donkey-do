@@ -8,6 +8,12 @@ packages = [{include = "donkey_see_donkey_do"}]
 
 [tool.poetry.dependencies]
 python = "^3.8"
+pynput = "^1.7.6"
+pyautogui = "^0.9.53"
+pillow = "^9.4.0"
+numpy = "^1.24.1"
+apscheduler = "^3.10.0"
+pydantic = "^1.10.4"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.1"
