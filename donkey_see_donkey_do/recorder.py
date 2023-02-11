@@ -8,8 +8,8 @@ import pyautogui
 from apscheduler.schedulers.background import BackgroundScheduler
 from PIL import Image
 from pydantic import BaseModel, Field
-from pynput import mouse
-from pynput.mouse import Button, Controller
+from pynput import keyboard, mouse
+from pynput.mouse import Button
 
 
 def model_json_dumps(v, *, default):
@@ -18,6 +18,8 @@ def model_json_dumps(v, *, default):
             buffer = BytesIO()
             value.save(buffer, format="PNG")
             return base64.b64encode(buffer.getvalue()).decode("ascii")
+        if isinstance(value, keyboard.Key):
+            return {"donkey_see_donkey_do": None, "type": "key", "key": value.name}
         return default(value)
 
     return json.dumps(v, default=basic_default)
@@ -30,6 +32,13 @@ def model_json_loads(value):
             buffer = BytesIO()
             buffer.write(base64.b64decode(screenshot.encode("ascii")))
             val["screenshot"] = Image.open(buffer, formats=("PNG",))
+
+        if "donkey_see_donkey_do" in val:
+            if val["type"] == "key":
+                val = keyboard.Key[val["key"]]
+            else:
+                raise ValueError(f"Unrecognized type: {val['type']}")
+
         return val
 
     return json.loads(value, object_hook=obj_hook)
@@ -70,7 +79,13 @@ class ScrollEvent(MouseEvent):
         self.scroll = (old_dx + dx, old_dy + dy)
 
 
-RealEventsType = Union[ScreenshotEvent, ClickEvent, ScrollEvent]
+class KeyboardEvent(BaseEvent):
+    device: Literal["keyboard"] = "keyboard"
+    action: Literal["press", "release"]
+    key: Union[keyboard.Key, str]
+
+
+RealEventsType = Union[ScreenshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
 
 
 class Events(BaseModel):
@@ -96,16 +111,18 @@ class Recorder:
         self,
         record_click=True,
         record_scroll=True,
+        record_keyboard=True,
         screenshot_on_action=True,
         screenshot_frequency: Optional[Union[float, int]] = None,
     ):
         self._record_click = record_click
         self._record_scroll = record_scroll
+        self._record_keyboard = record_keyboard
         self.screenshot_on_action = screenshot_on_action
         self.screenshot_frequency = screenshot_frequency
 
-        self._mouse_controller = Controller()
         self._mouse_listener = None  # type: Optional[mouse.Listener]
+        self._keyboard_listener = None  # type: Optional[keyboard.Listener]
 
         self._screenshot_scheduler = None  # type: Optional[BackgroundScheduler]
 
@@ -146,6 +163,14 @@ class Recorder:
     def _take_screenshot(self):
         self.recorded_actions.append(ScreenshotEvent(screenshot=pyautogui.screenshot()))
 
+    def _on_key_press(self, key):
+        key = key if isinstance(key, keyboard.Key) else str(key)
+        self.recorded_actions.append(KeyboardEvent(action="press", key=key))
+
+    def _on_key_release(self, key):
+        key = key if isinstance(key, keyboard.Key) else str(key)
+        self.recorded_actions.append(KeyboardEvent(action="release", key=key))
+
     def record(self) -> None:
         mouse_kwargs = {}
 
@@ -159,13 +184,22 @@ class Recorder:
             self._mouse_listener = mouse.Listener(**mouse_kwargs)
             self._mouse_listener.start()
 
+        if self._record_keyboard:
+            self._keyboard_listener = keyboard.Listener(on_press=self._on_key_press, on_release=self._on_key_release)
+            self._keyboard_listener.start()
+
         if self.screenshot_frequency:
             self._screenshot_scheduler = BackgroundScheduler()
             self._screenshot_scheduler.add_job(self._take_screenshot, "interval", seconds=1 / self.screenshot_frequency)
             self._screenshot_scheduler.start()
 
     def stop(self) -> None:
-        self._mouse_listener.stop()
+        if self._mouse_listener is not None:
+            self._mouse_listener.stop()
+
+        if self._keyboard_listener is not None:
+            self._keyboard_listener.stop()
+
         if self._screenshot_scheduler is not None:
             self._screenshot_scheduler.shutdown()
 
