@@ -3,6 +3,7 @@ import json
 import math
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 from typing import List, Literal, Optional, Tuple, Union
 
 import pyautogui
@@ -49,7 +50,7 @@ def model_json_loads(value):
 # and https://stackoverflow.com/questions/68044244/parsing-list-of-different-models-with-pydantic
 class BaseEvent(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
-    screenshot: Optional[Image.Image] = None
+    screenshot: Optional[Union[Image.Image, Path]] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -58,7 +59,7 @@ class BaseEvent(BaseModel):
 
 
 class ScreenshotEvent(BaseEvent):
-    screenshot: Image.Image
+    screenshot: Union[Image.Image, Path]
 
 
 class MouseEvent(BaseEvent):
@@ -115,11 +116,38 @@ class Events(BaseModel):
 
 
 class BaseRecorder:
-    def __init__(self, take_screenshot: bool = True):
+    def __init__(self, take_screenshot: bool = True, screenshot_directory: Optional[Path] = None):
         self.take_screenshot = take_screenshot
+        self.screenshot_directory = screenshot_directory
+
+    def get_screenshot(self) -> Optional[Union[Path, Image.Image]]:
+        if not self.take_screenshot:
+            return None
+
+        screenshot = pyautogui.screenshot()
+        if self.screenshot_directory is None:
+            return screenshot
+
+        output_filepath = self.screenshot_directory / (datetime.now().isoformat() + ".png")
+        screenshot.save(output_filepath)
+        return output_filepath
 
     def __call__(self, *args, **kwargs):
         raise NotImplementedError
+
+
+class ScreenshotRecorder(BaseRecorder):
+    def __init__(
+        self,
+        take_screenshot: bool = True,
+        screenshot_directory: Optional[Path] = None,
+        frequency: Union[int, float] = 1,
+    ):
+        super().__init__(take_screenshot, screenshot_directory)
+        self.frequency = frequency
+
+    def __call__(self, previous_events: Events) -> ScreenshotEvent:
+        return ScreenshotEvent(screenshot=self.get_screenshot())
 
 
 class ClickRecorder(BaseRecorder):
@@ -128,13 +156,15 @@ class ClickRecorder(BaseRecorder):
             action="press" if is_press else "release",
             button=button.name,
             location=(x, y),
-            screenshot=pyautogui.screenshot() if self.take_screenshot else None,
+            screenshot=self.get_screenshot(),
         )
 
 
 class ScrollRecorder(BaseRecorder):
-    def __init__(self, take_screenshot: bool = True, seconds_to_merge: float = 1):
-        super().__init__(take_screenshot)
+    def __init__(
+        self, take_screenshot: bool = True, screenshot_directory: Optional[Path] = None, seconds_to_merge: float = 1
+    ):
+        super().__init__(take_screenshot, screenshot_directory)
         self.seconds_to_merge = seconds_to_merge
 
     def merge_with_previous_event(self, x: int, y: int, dx: int, dy: int, previous_events: Events) -> bool:
@@ -158,13 +188,15 @@ class ScrollRecorder(BaseRecorder):
         return ScrollEvent(
             location=(x, y),
             scroll=(dx, dy),
-            screenshot=pyautogui.screenshot() if self.take_screenshot else None,
+            screenshot=self.get_screenshot(),
         )
 
 
 class KeyboardRecorder(BaseRecorder):
-    def __init__(self, take_screenshot: bool = True, seconds_to_merge: float = 1):
-        super().__init__(take_screenshot)
+    def __init__(
+        self, take_screenshot: bool = True, screenshot_directory: Optional[Path] = None, seconds_to_merge: float = 1
+    ):
+        super().__init__(take_screenshot, screenshot_directory)
         self.seconds_to_merge = seconds_to_merge
 
     def merge_with_previous_event(self, previous_events: Events) -> bool:
@@ -182,7 +214,7 @@ class KeyboardRecorder(BaseRecorder):
             previous_events[-1].append_action(key, "press" if is_press else "release")
             return
 
-        event = KeyboardEvent(screenshot=pyautogui.screenshot() if self.take_screenshot else None)
+        event = KeyboardEvent(screenshot=self.get_screenshot())
         event.append_action(key, "press" if is_press else "release")
         return event
 
@@ -193,12 +225,12 @@ class Recorder:
         record_click=ClickRecorder(),
         record_scroll=ScrollRecorder(),
         record_keyboard=KeyboardRecorder(),
-        screenshot_frequency: Optional[Union[float, int]] = None,
+        record_screenshot=ScreenshotRecorder(),
     ):
         self._record_click = record_click
         self._record_scroll = record_scroll
         self._record_keyboard = record_keyboard
-        self.screenshot_frequency = screenshot_frequency
+        self._record_screenshot = record_screenshot
 
         self._mouse_listener = None  # type: Optional[mouse.Listener]
         self._keyboard_listener = None  # type: Optional[keyboard.Listener]
@@ -219,7 +251,7 @@ class Recorder:
             self.recorded_actions.append(result)
 
     def _take_screenshot(self):
-        self.recorded_actions.append(ScreenshotEvent(screenshot=pyautogui.screenshot()))
+        self.recorded_actions.append(self._record_screenshot(self.recorded_actions))
 
     def _on_key_press(self, key):
         result = self._record_keyboard(key, True, self.recorded_actions)
@@ -248,9 +280,11 @@ class Recorder:
             self._keyboard_listener = keyboard.Listener(on_press=self._on_key_press, on_release=self._on_key_release)
             self._keyboard_listener.start()
 
-        if self.screenshot_frequency:
+        if self._record_screenshot is not None:
             self._screenshot_scheduler = BackgroundScheduler()
-            self._screenshot_scheduler.add_job(self._take_screenshot, "interval", seconds=1 / self.screenshot_frequency)
+            self._screenshot_scheduler.add_job(
+                self._take_screenshot, "interval", seconds=1 / self._record_screenshot.frequency
+            )
             self._screenshot_scheduler.start()
 
     def stop(self) -> None:
