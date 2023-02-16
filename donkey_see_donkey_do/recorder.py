@@ -237,33 +237,33 @@ class Recorder:
 
         self._screenshot_scheduler = None  # type: Optional[BackgroundScheduler]
 
-        self.recorded_actions = Events()
+        self.recorded_events = Events()
 
     def clear_recording(self) -> None:
-        self.recorded_actions = Events()
+        self.recorded_events = Events()
 
     def _on_click(self, x: int, y: int, button: Button, is_press: bool):
-        self.recorded_actions.append(self._record_click(x, y, button, is_press, self.recorded_actions))
+        self.recorded_events.append(self._record_click(x, y, button, is_press, self.recorded_events))
 
     def _on_scroll(self, x: int, y: int, dx, dy):
-        result = self._record_scroll(x, y, dx, dy, self.recorded_actions)
+        result = self._record_scroll(x, y, dx, dy, self.recorded_events)
         if result is not None:
-            self.recorded_actions.append(result)
+            self.recorded_events.append(result)
 
     def _take_screenshot(self):
-        result = self._record_screenshot(self.recorded_actions)
+        result = self._record_screenshot(self.recorded_events)
         if result is not None:
-            self.recorded_actions.append(result)
+            self.recorded_events.append(result)
 
     def _on_key_press(self, key):
-        result = self._record_keyboard(key, True, self.recorded_actions)
+        result = self._record_keyboard(key, True, self.recorded_events)
         if result is not None:
-            self.recorded_actions.append(result)
+            self.recorded_events.append(result)
 
     def _on_key_release(self, key):
-        result = self._record_keyboard(key, False, self.recorded_actions)
+        result = self._record_keyboard(key, False, self.recorded_events)
         if result is not None:
-            self.recorded_actions.append(result)
+            self.recorded_events.append(result)
 
     def record(self) -> None:
         mouse_kwargs = {}
