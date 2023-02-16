@@ -251,7 +251,9 @@ class Recorder:
             self.recorded_actions.append(result)
 
     def _take_screenshot(self):
-        self.recorded_actions.append(self._record_screenshot(self.recorded_actions))
+        result = self._record_screenshot(self.recorded_actions)
+        if result is not None:
+            self.recorded_actions.append(result)
 
     def _on_key_press(self, key):
         result = self._record_keyboard(key, True, self.recorded_actions)
