@@ -1,5 +1,6 @@
 import base64
 import json
+import math
 from datetime import datetime
 from io import BytesIO
 from typing import List, Literal, Optional, Tuple, Union
@@ -73,16 +74,23 @@ class ClickEvent(MouseEvent):
 class ScrollEvent(MouseEvent):
     action: Literal["scroll"] = "scroll"
     scroll: Tuple[int, int]
+    last_action_timestamp: datetime = Field(default_factory=datetime.now)
 
     def update_scroll(self, dx: int, dy: int) -> None:
         old_dx, old_dy = self.scroll
         self.scroll = (old_dx + dx, old_dy + dy)
+        self.last_action_timestamp = datetime.now()
+
+
+KeyType = Union[keyboard.Key, str]
 
 
 class KeyboardEvent(BaseEvent):
     device: Literal["keyboard"] = "keyboard"
-    action: Literal["press", "release"]
-    key: Union[keyboard.Key, str]
+    key_actions: List[Tuple[KeyType, Literal["press", "release"], datetime]] = Field(default_factory=list)
+
+    def append_action(self, key: KeyType, action: Literal["press", "release"]) -> None:
+        self.key_actions.append((key, action, datetime.now()))
 
 
 RealEventsType = Union[ScreenshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
@@ -106,19 +114,90 @@ class Events(BaseModel):
         json_dumps = model_json_dumps
 
 
+class BaseRecorder:
+    def __init__(self, take_screenshot: bool = True):
+        self.take_screenshot = take_screenshot
+
+    def __call__(self, *args, **kwargs):
+        raise NotImplementedError
+
+
+class ClickRecorder(BaseRecorder):
+    def __call__(self, x: int, y: int, button: Button, is_press: bool, previous_events: Events) -> ClickEvent:
+        return ClickEvent(
+            action="press" if is_press else "release",
+            button=button.name,
+            location=(x, y),
+            screenshot=pyautogui.screenshot() if self.take_screenshot else None,
+        )
+
+
+class ScrollRecorder(BaseRecorder):
+    def __init__(self, take_screenshot: bool = True, seconds_to_merge: float = 1):
+        super().__init__(take_screenshot)
+        self.seconds_to_merge = seconds_to_merge
+
+    def merge_with_previous_event(self, x: int, y: int, dx: int, dy: int, previous_events: Events) -> bool:
+        if len(previous_events) == 0:
+            return False
+
+        previous_event = previous_events[-1]
+        return (
+            isinstance(previous_event, ScrollEvent)
+            and previous_event.location == (x, y)
+            and (previous_event.scroll[0] == 0 or math.copysign(1, dx) == math.copysign(1, previous_event.scroll[0]))
+            and (previous_event.scroll[1] == 0 or math.copysign(1, dy) == math.copysign(1, previous_event.scroll[1]))
+            and ((datetime.now() - previous_event.timestamp).total_seconds() < self.seconds_to_merge)
+        )
+
+    def __call__(self, x: int, y: int, dx: int, dy: int, previous_events: Events) -> Optional[ScrollEvent]:
+        if self.merge_with_previous_event(x, y, dx, dy, previous_events):
+            previous_events[-1].update_scroll(dx, dy)
+            return
+
+        return ScrollEvent(
+            location=(x, y),
+            scroll=(dx, dy),
+            screenshot=pyautogui.screenshot() if self.take_screenshot else None,
+        )
+
+
+class KeyboardRecorder(BaseRecorder):
+    def __init__(self, take_screenshot: bool = True, seconds_to_merge: float = 1):
+        super().__init__(take_screenshot)
+        self.seconds_to_merge = seconds_to_merge
+
+    def merge_with_previous_event(self, previous_events: Events) -> bool:
+        if len(previous_events) == 0:
+            return False
+
+        previous_event = previous_events[-1]
+        return isinstance(previous_event, KeyboardEvent) and (
+            (datetime.now() - previous_event.timestamp).total_seconds() < self.seconds_to_merge
+        )
+
+    def __call__(self, key: KeyType, is_press: bool, previous_events: Events) -> Optional[KeyboardEvent]:
+        key = key if isinstance(key, keyboard.Key) else str(key)
+        if self.merge_with_previous_event(previous_events):
+            previous_events[-1].append_action(key, "press" if is_press else "release")
+            return
+
+        event = KeyboardEvent(screenshot=pyautogui.screenshot() if self.take_screenshot else None)
+        event.append_action(key, "press" if is_press else "release")
+        return event
+
+
 class Recorder:
     def __init__(
         self,
-        record_click=True,
-        record_scroll=True,
-        record_keyboard=True,
-        screenshot_on_action=True,
+        record_click=ClickRecorder(),
+        record_scroll=ScrollRecorder(),
+        record_keyboard=KeyboardRecorder(),
         screenshot_frequency: Optional[Union[float, int]] = None,
     ):
         self._record_click = record_click
         self._record_scroll = record_scroll
         self._record_keyboard = record_keyboard
-        self.screenshot_on_action = screenshot_on_action
         self.screenshot_frequency = screenshot_frequency
 
         self._mouse_listener = None  # type: Optional[mouse.Listener]
@@ -132,44 +211,25 @@ class Recorder:
         self.recorded_actions = Events()
 
     def _on_click(self, x: int, y: int, button: Button, is_press: bool):
-        self.recorded_actions.append(
-            ClickEvent(
-                action="press" if is_press else "release",
-                button=button.name,
-                location=(x, y),
-                screenshot=pyautogui.screenshot() if self.screenshot_on_action else None,
-            )
-        )
+        self.recorded_actions.append(self._record_click(x, y, button, is_press, self.recorded_actions))
 
     def _on_scroll(self, x: int, y: int, dx, dy):
-        if len(self.recorded_actions) > 0:
-            last_action = self.recorded_actions[-1]
-            if (
-                isinstance(last_action, ScrollEvent)
-                and last_action.location == (x, y)
-                and (datetime.now() - last_action.timestamp).total_seconds() < 1
-            ):
-                last_action.update_scroll(dx, dy)
-                return
-
-        self.recorded_actions.append(
-            ScrollEvent(
-                location=(x, y),
-                scroll=(dx, dy),
-                screenshot=pyautogui.screenshot() if self.screenshot_on_action else None,
-            )
-        )
+        result = self._record_scroll(x, y, dx, dy, self.recorded_actions)
+        if result is not None:
+            self.recorded_actions.append(result)
 
     def _take_screenshot(self):
         self.recorded_actions.append(ScreenshotEvent(screenshot=pyautogui.screenshot()))
 
     def _on_key_press(self, key):
-        key = key if isinstance(key, keyboard.Key) else str(key)
-        self.recorded_actions.append(KeyboardEvent(action="press", key=key))
+        result = self._record_keyboard(key, True, self.recorded_actions)
+        if result is not None:
+            self.recorded_actions.append(result)
 
     def _on_key_release(self, key):
-        key = key if isinstance(key, keyboard.Key) else str(key)
-        self.recorded_actions.append(KeyboardEvent(action="release", key=key))
+        result = self._record_keyboard(key, False, self.recorded_actions)
+        if result is not None:
+            self.recorded_actions.append(result)
 
     def record(self) -> None:
         mouse_kwargs = {}
