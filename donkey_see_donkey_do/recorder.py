@@ -46,6 +46,9 @@ def model_json_loads(value):
     return json.loads(value, object_hook=obj_hook)
 
 
+PointType = Tuple[int, int]
+
+
 # might need to refer to https://stackoverflow.com/questions/68746351/using-pydantic-to-deserialize-sublasses-of-a-model
 # and https://stackoverflow.com/questions/68044244/parsing-list-of-different-models-with-pydantic
 class BaseEvent(BaseModel):
@@ -59,12 +62,14 @@ class BaseEvent(BaseModel):
 
 
 class ScreenshotEvent(BaseEvent):
+    device: Literal["screen"] = "screen"
     screenshot: Union[Image.Image, Path]
+    location: PointType
 
 
 class MouseEvent(BaseEvent):
     device: Literal["mouse"] = "mouse"
-    location: Tuple[int, int]
+    location: PointType
 
 
 class ClickEvent(MouseEvent):
@@ -147,7 +152,7 @@ class ScreenshotRecorder(BaseRecorder):
         self.frequency = frequency
 
     def __call__(self, previous_events: Events) -> ScreenshotEvent:
-        return ScreenshotEvent(screenshot=self.get_screenshot())
+        return ScreenshotEvent(screenshot=self.get_screenshot(), location=pyautogui.position())
 
 
 class ClickRecorder(BaseRecorder):
