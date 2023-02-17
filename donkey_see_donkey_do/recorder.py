@@ -305,6 +305,54 @@ class Recorder:
             self._screenshot_scheduler.shutdown()
 
 
+def events_to_actions_using_location(events: Events):
+    actions = []
+    start_time = events[0].timestamp
+    for event in events:
+        start_offset = event.timestamp - start_time
+        if isinstance(event, KeyboardEvent):
+            actions.append(
+                {
+                    "device": event.device,
+                    "start": start_offset,
+                    "key_actions": [
+                        (key, action, action_ts - event.timestamp) for key, action, action_ts in event.key_actions
+                    ],
+                }
+            )
+        elif isinstance(event, ScrollEvent):
+            actions.append(
+                {
+                    "device": event.device,
+                    "start": start_offset,
+                    "action": event.action,
+                    "location": event.location,
+                    "scroll": event.scroll,
+                    "duration": event.last_action_timestamp - event.timestamp,
+                }
+            )
+        elif isinstance(event, ClickEvent):
+            actions.append(
+                {
+                    "device": event.device,
+                    "start": start_offset,
+                    "action": event.action,
+                    "location": event.location,
+                    "button": event.button,
+                }
+            )
+        elif isinstance(event, ScreenshotEvent):
+            actions.append(
+                {
+                    "device": event.device,
+                    "start": start_offset,
+                    "location": event.location,
+                }
+            )
+        else:
+            raise TypeError(f"Unrecognized event type: {type(event)}")
+
+
 """
 class Player:
     def __init__(self, recorded_actions: RecordedActions):
