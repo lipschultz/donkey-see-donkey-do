@@ -12,7 +12,7 @@ from pynput import keyboard, mouse
 KeyType = Union[keyboard.Key, str]
 
 
-def model_json_dumps(v, *, default):
+def model_json_dumps(val, *, default):
     def basic_default(value):
         if isinstance(value, Image.Image):
             buffer = BytesIO()
@@ -22,7 +22,7 @@ def model_json_dumps(v, *, default):
             return {"donkey_see_donkey_do": None, "type": "key", "key": value.name}
         return default(value)
 
-    return json.dumps(v, default=basic_default)
+    return json.dumps(val, default=basic_default)
 
 
 def model_json_loads(value):
@@ -64,11 +64,6 @@ class BaseEvent(BaseModel):
         json_loads = model_json_loads
         json_dumps = model_json_dumps
 
-    def replay(
-        self, mouse_controller: mouse.Controller, keyboard_controller: keyboard.Controller, max_duration: float
-    ) -> None:
-        raise NotImplementedError
-
 
 class ScreenshotEvent(BaseEvent):
     """Event representing the general state of the screen."""
@@ -91,16 +86,6 @@ class ClickEvent(MouseEvent):
     def _pynput_button(self) -> mouse.Button:
         return mouse.Button[self.button]
 
-    def replay(
-        self, mouse_controller: mouse.Controller, keyboard_controller: keyboard.Controller, max_duration: float
-    ) -> None:
-        mouse_controller.position = self.location
-
-        if self.action == "press":
-            mouse_controller.press(self._pynput_button)
-        else:
-            mouse_controller.release(self._pynput_button)
-
 
 class ScrollEvent(MouseEvent):
     action: Literal["scroll"] = "scroll"
@@ -111,18 +96,6 @@ class ScrollEvent(MouseEvent):
         old_dx, old_dy = self.scroll
         self.scroll = (old_dx + dx, old_dy + dy)
         self.last_action_timestamp = datetime.now()
-
-    def replay(
-        self, mouse_controller: mouse.Controller, keyboard_controller: keyboard.Controller, max_duration: float
-    ) -> None:
-        scroll_duration = (self.last_action_timestamp - self.timestamp).total_seconds()
-
-        mouse_controller.position = self.location
-
-        if self.action == "press":
-            mouse_controller.press(self._pynput_button)
-        else:
-            mouse_controller.release(self._pynput_button)
 
 
 class KeyboardEvent(BaseEvent):
