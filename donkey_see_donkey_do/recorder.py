@@ -204,6 +204,15 @@ class Recorder:
             self._screenshot_scheduler.shutdown()
 
 
+def player(events: Events):
+    mouse_controller = mouse.Controller()
+    keyboard_controller = keyboard.Controller()
+    start_time = (events[0].timestamp - events[1].timestamp).total_seconds()
+    for event, next_event in zip(events, events[1:]):
+        max_duration = (next_event.timestamp - event.timestamp).total_seconds()
+        event.replay(max_duration)
+
+
 def events_to_actions_using_location(events: Events):
     actions = []
     start_time = events[0].timestamp
