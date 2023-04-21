@@ -65,7 +65,7 @@ class BaseEvent(BaseModel):
         json_dumps = model_json_dumps
 
 
-class ScreenshotEvent(BaseEvent):
+class StateSnapshotEvent(BaseEvent):
     """Event representing the general state of the screen."""
 
     device: Literal["screen"] = "screen"
@@ -79,7 +79,7 @@ class MouseEvent(BaseEvent):
 
 
 class ClickEvent(MouseEvent):
-    action: Literal["press", "release"]
+    action: Literal["press", "release", "click"]
     button: str
 
     @property
@@ -100,13 +100,13 @@ class ScrollEvent(MouseEvent):
 
 class KeyboardEvent(BaseEvent):
     device: Literal["keyboard"] = "keyboard"
-    key_actions: List[Tuple[KeyType, Literal["press", "release"], datetime]] = Field(default_factory=list)
+    key_actions: List[Tuple[KeyType, Literal["press", "release", "write"], datetime]] = Field(default_factory=list)
 
-    def append_action(self, key: KeyType, action: Literal["press", "release"]) -> None:
+    def append_action(self, key: KeyType, action: Literal["press", "release", "write"]) -> None:
         self.key_actions.append((key, action, datetime.now()))
 
 
-RealEventsType = Union[ScreenshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
+RealEventsType = Union[StateSnapshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
 
 
 class Events(BaseModel):

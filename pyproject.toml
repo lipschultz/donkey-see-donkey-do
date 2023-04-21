@@ -14,6 +14,7 @@ pillow = "^9.4.0"
 numpy = "^1.24.1"
 apscheduler = "^3.10.0"
 pydantic = "^1.10.4"
+pin-the-tail = {git = "git@github.com:lipschultz/pin-the-tail.git", rev = "main"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.2.1"
@@ -37,4 +38,4 @@ disable = ["import-error", "missing-module-docstring", "missing-class-docstring"
 max-line-length = 120
 
 [tool.pylint.basic]
-good-names = ["fp", "i", "x", "y"]
+good-names = ["fp", "i", "x", "y", "dx", "dy"]

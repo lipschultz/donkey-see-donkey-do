@@ -9,7 +9,7 @@ from PIL import Image
 from pynput import keyboard, mouse
 from pynput.mouse import Button
 
-from donkey_see_donkey_do.events import Events
+from donkey_see_donkey_do.events import ClickEvent, Events, KeyboardEvent, KeyType, ScrollEvent, StateSnapshotEvent
 
 
 class BaseRecorder:
@@ -33,7 +33,7 @@ class BaseRecorder:
         raise NotImplementedError
 
 
-class ScreenshotRecorder(BaseRecorder):
+class StateSnapshotRecorder(BaseRecorder):
     def __init__(
         self,
         take_screenshot: bool = True,
@@ -43,8 +43,8 @@ class ScreenshotRecorder(BaseRecorder):
         super().__init__(take_screenshot, screenshot_directory)
         self.frequency = frequency
 
-    def __call__(self, previous_events: Events) -> ScreenshotEvent:
-        return ScreenshotEvent(screenshot=self.get_screenshot(), location=pyautogui.position())
+    def __call__(self, previous_events: Events) -> StateSnapshotEvent:
+        return StateSnapshotEvent(screenshot=self.get_screenshot(), location=pyautogui.position())
 
 
 class ClickRecorder(BaseRecorder):
@@ -80,7 +80,7 @@ class ScrollRecorder(BaseRecorder):
     def __call__(self, x: int, y: int, dx: int, dy: int, previous_events: Events) -> Optional[ScrollEvent]:
         if self.merge_with_previous_event(x, y, dx, dy, previous_events):
             previous_events[-1].update_scroll(dx, dy)
-            return
+            return None
 
         return ScrollEvent(
             location=(x, y),
@@ -109,7 +109,7 @@ class KeyboardRecorder(BaseRecorder):
         key = key if isinstance(key, keyboard.Key) else str(key)
         if self.merge_with_previous_event(previous_events):
             previous_events[-1].append_action(key, "press" if is_press else "release")
-            return
+            return None
 
         event = KeyboardEvent(screenshot=self.get_screenshot())
         event.append_action(key, "press" if is_press else "release")
@@ -126,17 +126,17 @@ class Recorder:
         record_click=ClickRecorder(),
         record_scroll=ScrollRecorder(),
         record_keyboard=KeyboardRecorder(),
-        record_screenshot=ScreenshotRecorder(),
+        record_state=StateSnapshotRecorder(),
     ):
         self._record_click = record_click
         self._record_scroll = record_scroll
         self._record_keyboard = record_keyboard
-        self._record_screenshot = record_screenshot
+        self._record_state = record_state
 
         self._mouse_listener = None  # type: Optional[mouse.Listener]
         self._keyboard_listener = None  # type: Optional[keyboard.Listener]
 
-        self._screenshot_scheduler = None  # type: Optional[BackgroundScheduler]
+        self._state_snapshot_scheduler = None  # type: Optional[BackgroundScheduler]
 
         self.recorded_events = Events()
 
@@ -155,7 +155,7 @@ class Recorder:
             self.recorded_events.append(result)
 
     def _take_screenshot(self):
-        result = self._record_screenshot(self.recorded_events)
+        result = self._record_state(self.recorded_events)
         if result is not None:
             self.recorded_events.append(result)
 
@@ -186,12 +186,12 @@ class Recorder:
             self._keyboard_listener = keyboard.Listener(on_press=self._on_key_press, on_release=self._on_key_release)
             self._keyboard_listener.start()
 
-        if self._record_screenshot is not None:
-            self._screenshot_scheduler = BackgroundScheduler()
-            self._screenshot_scheduler.add_job(
-                self._take_screenshot, "interval", seconds=1 / self._record_screenshot.frequency
+        if self._record_state is not None:
+            self._state_snapshot_scheduler = BackgroundScheduler()
+            self._state_snapshot_scheduler.add_job(
+                self._take_screenshot, "interval", seconds=1 / self._record_state.frequency
             )
-            self._screenshot_scheduler.start()
+            self._state_snapshot_scheduler.start()
 
     def stop(self) -> None:
         if self._mouse_listener is not None:
@@ -200,8 +200,8 @@ class Recorder:
         if self._keyboard_listener is not None:
             self._keyboard_listener.stop()
 
-        if self._screenshot_scheduler is not None:
-            self._screenshot_scheduler.shutdown()
+        if self._state_snapshot_scheduler is not None:
+            self._state_snapshot_scheduler.shutdown()
 
 
 def events_to_actions_using_location(events: Events):
@@ -240,7 +240,7 @@ def events_to_actions_using_location(events: Events):
                     "button": event.button,
                 }
             )
-        elif isinstance(event, ScreenshotEvent):
+        elif isinstance(event, StateSnapshotEvent):
             actions.append(
                 {
                     "device": event.device,
@@ -250,15 +250,3 @@ def events_to_actions_using_location(events: Events):
             )
         else:
             raise TypeError(f"Unrecognized event type: {type(event)}")
-
-
-"""
-class Player:
-    def __init__(self, recorded_actions: RecordedActions):
-        self.recorded_actions = recorded_actions
-
-    def play(self) -> None:
-        for action in self.recorded_actions:
-            if action["action"] == "screenshot":
-                continue
-"""
