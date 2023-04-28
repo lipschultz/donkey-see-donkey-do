@@ -1,4 +1,3 @@
-import math
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Union
@@ -71,22 +70,18 @@ class ScrollRecorder(BaseRecorder):
         previous_event = previous_events[-1]
         return (
             isinstance(previous_event, ScrollEvent)
-            and previous_event.location == (x, y)
-            and (previous_event.scroll[0] == 0 or math.copysign(1, dx) == math.copysign(1, previous_event.scroll[0]))
-            and (previous_event.scroll[1] == 0 or math.copysign(1, dy) == math.copysign(1, previous_event.scroll[1]))
-            and ((datetime.now() - previous_event.timestamp).total_seconds() < self.seconds_to_merge)
+            and (datetime.now() - previous_event.timestamp).total_seconds() < self.seconds_to_merge
+            and previous_event.location == (x, y)  # for now, require the mouse to be in the same position
         )
 
     def __call__(self, x: int, y: int, dx: int, dy: int, previous_events: Events) -> Optional[ScrollEvent]:
         if self.merge_with_previous_event(x, y, dx, dy, previous_events):
-            previous_events[-1].update_scroll(dx, dy)
+            previous_events[-1].append_action(dx, dy)
             return None
 
-        return ScrollEvent(
-            location=(x, y),
-            scroll=(dx, dy),
-            screenshot=self.get_screenshot(),
-        )
+        event = ScrollEvent(location=(x, y), screenshot=self.get_screenshot())
+        event.append_action(dx, dy)
+        return event
 
 
 class KeyboardRecorder(BaseRecorder):

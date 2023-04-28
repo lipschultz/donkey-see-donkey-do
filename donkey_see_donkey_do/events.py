@@ -1,11 +1,15 @@
 import base64
 import json
+from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from typing import List, Literal, Optional, Tuple, Union
 
+import pydantic
 from PIL import Image
+from pin_the_tail.interaction import MouseButton
+from pin_the_tail.location import Point
 from pydantic import BaseModel, Field
 from pynput import keyboard, mouse
 
@@ -44,7 +48,16 @@ def model_json_loads(value):
     return json.loads(value, object_hook=obj_hook)
 
 
-PointType = Tuple[int, int]
+@dataclass(frozen=True)
+class PointChange:
+    dx: int
+    dy: int
+
+
+@dataclass
+class ScrollChange:
+    scroll: PointChange
+    timestamp: datetime
 
 
 class BaseEvent(BaseModel):
@@ -66,16 +79,32 @@ class BaseEvent(BaseModel):
 
 
 class StateSnapshotEvent(BaseEvent):
-    """Event representing the general state of the screen."""
+    """
+    Event representing the general state of the screen, including what the screen currently looks like and the location
+    of the mouse.
+    """
 
-    device: Literal["screen"] = "screen"
+    device: Literal["state"] = "state"
     screenshot: Union[Image.Image, Path]
-    location: PointType
+    location: Point
 
 
 class MouseEvent(BaseEvent):
     device: Literal["mouse"] = "mouse"
-    location: PointType
+    location: Point
+
+    @pydantic.validator("location")
+    def convert_location_to_point(cls, value) -> Point:
+        if isinstance(value, (list, tuple)):
+            if len(value) == 2:
+                value = Point.from_tuple(value)
+            else:
+                raise ValueError(f"location must be of type Point or a 2-tuple; received {value!r}")
+
+        if not isinstance(value, Point):
+            raise TypeError(f"location must be of type Point or a 2-tuple; received {value!r}")
+
+        return value
 
 
 class ClickEvent(MouseEvent):
@@ -86,16 +115,21 @@ class ClickEvent(MouseEvent):
     def _pynput_button(self) -> mouse.Button:
         return mouse.Button[self.button]
 
+    @property
+    def pin_the_tail_button(self) -> MouseButton:
+        return MouseButton(self.button)
+
 
 class ScrollEvent(MouseEvent):
     action: Literal["scroll"] = "scroll"
-    scroll: Tuple[int, int]
-    last_action_timestamp: datetime = Field(default_factory=datetime.now)
+    scroll_actions: List[ScrollChange] = Field(default_factory=list)
 
-    def update_scroll(self, dx: int, dy: int) -> None:
-        old_dx, old_dy = self.scroll
-        self.scroll = (old_dx + dx, old_dy + dy)
-        self.last_action_timestamp = datetime.now()
+    def append_action(self, dx: int, dy: int) -> None:
+        self.scroll_actions.append(ScrollChange(PointChange(dx, dy), datetime.now()))
+
+    @property
+    def last_action_timestamp(self) -> datetime:
+        return self.scroll_actions[-1].timestamp
 
 
 class KeyboardEvent(BaseEvent):
