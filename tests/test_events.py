@@ -177,7 +177,7 @@ class TestClickEvent:
     )
     def test_invalid_button_raises_validation_error(mouse_button):
         with pytest.raises(ValidationError):
-            subject = events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
+            events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
 
     @staticmethod
     @pytest.mark.parametrize(
@@ -218,7 +218,37 @@ class TestClickEvent:
     @pytest.mark.parametrize("action", ("invalid", "pressmore", "press with other stuff", 1))
     def test_error_raised_when_action_is_not_valid(action):
         with pytest.raises(ValidationError):
-            subject = events.ClickEvent(action=action, button="left", location=(1, 1))
+            events.ClickEvent(action=action, button="left", location=(1, 1))
+
+    @staticmethod
+    def test_event_serializes():
+        subject = events.ClickEvent(action="release", button=MouseButton.LEFT, location=Point(1, 1))
+
+        actual = subject.json()
+
+        assert_serialized_objects_equal(
+            actual,
+            {
+                "screenshot": None,
+                "device": "mouse",
+                "action": "release",
+                "button": "left",
+                "location": {"x": 1, "y": 1},
+            },
+        )
+
+    @staticmethod
+    def test_deserialize_event():
+        subject = events.ClickEvent.parse_raw(
+            '{"timestamp": "2023-05-01T10:26:52.625731", "screenshot": null, "device": "mouse", "action": "release", "button": "left", "location": {"x": 1, "y": 1}}'
+        )
+
+        assert subject == events.ClickEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
+            action="release",
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+        )
 
 
 class TestScrollEvent:
