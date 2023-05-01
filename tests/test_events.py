@@ -15,9 +15,25 @@ from pynput import mouse
 from donkey_see_donkey_do import events
 
 
-def assert_timestamp_is_close(event_json):
+def assert_timestamp_is_close(event_json, expected_timestamp=None):
     assert "timestamp" in event_json
-    assert (datetime.now() - datetime.fromisoformat(event_json["timestamp"])).total_seconds() < 1
+
+    if expected_timestamp is None:
+        expected_timestamp = datetime.now()
+    assert (expected_timestamp - datetime.fromisoformat(event_json["timestamp"])).total_seconds() < 1
+
+
+def assert_serialized_objects_equal(actual: str, expected: dict):
+    actual_dict = json.loads(actual)
+
+    try:
+        expected_timestamp = expected.pop("timestamp")
+    except KeyError:
+        expected_timestamp = None
+    assert_timestamp_is_close(actual_dict, expected_timestamp)
+    actual_dict.pop("timestamp")
+
+    assert actual_dict == expected
 
 
 def generate_screenshot() -> Image.Image:
@@ -31,16 +47,16 @@ def generate_screenshot_string() -> str:
     return "iVBORw0KGgoAAAANSUhEUgAAADIAAAAZCAIAAAD8NuoTAAAAG0lEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAODeAA6/AAFIxA5aAAAAAElFTkSuQmCC"
 
 
-def assert_images_equal(expected, actual):
+def assert_images_equal(img1, img2):
     # From https://stackoverflow.com/a/68402702
-    assert expected.height == actual.height and expected.width == actual.width
+    assert img2.height == img1.height and img2.width == img1.width
 
-    if expected.mode == actual.mode == "RGBA":
-        img1_alphas = [pixel[3] for pixel in expected.getdata()]
-        img2_alphas = [pixel[3] for pixel in actual.getdata()]
+    if img2.mode == img1.mode == "RGBA":
+        img1_alphas = [pixel[3] for pixel in img2.getdata()]
+        img2_alphas = [pixel[3] for pixel in img1.getdata()]
         assert img1_alphas == img2_alphas
 
-    assert not ImageChops.difference(expected.convert("RGB"), actual.convert("RGB")).getbbox()
+    assert not ImageChops.difference(img2.convert("RGB"), img1.convert("RGB")).getbbox()
 
 
 class TestStateSnapshotEvent:
@@ -61,10 +77,7 @@ class TestStateSnapshotEvent:
 
         actual = subject.json()
 
-        actual_dict = json.loads(actual)
-        assert_timestamp_is_close(actual_dict)
-        actual_dict.pop("timestamp")
-        assert actual_dict == {"screenshot": ".", "device": "state", "location": {"x": 1, "y": 1}}
+        assert_serialized_objects_equal(actual, {"screenshot": ".", "device": "state", "location": {"x": 1, "y": 1}})
 
     @staticmethod
     def test_deserialize_event_when_screenshot_is_path():
@@ -82,14 +95,14 @@ class TestStateSnapshotEvent:
 
         actual = subject.json()
 
-        actual_dict = json.loads(actual)
-        assert_timestamp_is_close(actual_dict)
-        actual_dict.pop("timestamp")
-        assert actual_dict == {
-            "screenshot": {"donkey_see_donkey_do": None, "type": "image", "value": generate_screenshot_string()},
-            "device": "state",
-            "location": {"x": 1, "y": 1},
-        }
+        assert_serialized_objects_equal(
+            actual,
+            {
+                "screenshot": {"donkey_see_donkey_do": None, "type": "image", "value": generate_screenshot_string()},
+                "device": "state",
+                "location": {"x": 1, "y": 1},
+            },
+        )
 
     @staticmethod
     def test_deserialize_event_when_screenshot_is_image():
@@ -106,7 +119,7 @@ class TestStateSnapshotEvent:
             location=Point(1, 1),
         )
 
-        assert_images_equal(expected.screenshot, subject.screenshot)
+        assert_images_equal(subject.screenshot, expected.screenshot)
         subject.screenshot = Path(".")
         expected.screenshot = Path(".")
         assert subject == expected
