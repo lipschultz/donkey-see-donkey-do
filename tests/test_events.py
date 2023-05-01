@@ -1,21 +1,52 @@
+import json
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+import pyautogui
 import pytest
 from freezegun import freeze_time
+from PIL import Image, ImageChops
 from pin_the_tail.interaction import MouseButton
 from pin_the_tail.location import Point
 from pydantic import ValidationError
 from pynput import mouse
 
 from donkey_see_donkey_do import events
-from donkey_see_donkey_do.events import PointChange, ScrollChange
+
+
+def assert_timestamp_is_close(event_json):
+    assert "timestamp" in event_json
+    assert (datetime.now() - datetime.fromisoformat(event_json["timestamp"])).total_seconds() < 1
+
+
+def generate_screenshot() -> Image.Image:
+    image = Image.fromarray(np.zeros((25, 50)))
+    if image.mode != "RGB":
+        image = image.convert("RGB")
+    return image
+
+
+def generate_screenshot_string() -> str:
+    return "iVBORw0KGgoAAAANSUhEUgAAADIAAAAZCAIAAAD8NuoTAAAAG0lEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAODeAA6/AAFIxA5aAAAAAElFTkSuQmCC"
+
+
+def assert_images_equal(expected, actual):
+    # From https://stackoverflow.com/a/68402702
+    assert expected.height == actual.height and expected.width == actual.width
+
+    if expected.mode == actual.mode == "RGBA":
+        img1_alphas = [pixel[3] for pixel in expected.getdata()]
+        img2_alphas = [pixel[3] for pixel in actual.getdata()]
+        assert img1_alphas == img2_alphas
+
+    assert not ImageChops.difference(expected.convert("RGB"), actual.convert("RGB")).getbbox()
 
 
 class TestStateSnapshotEvent:
     @staticmethod
     def test_sets_device_to_state():
-        subject = events.StateSnapshotEvent(screenshot=Path("."), location=(1, 1))
+        subject = events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1))
 
         assert subject.device == "state"
 
@@ -24,52 +55,168 @@ class TestStateSnapshotEvent:
         with pytest.raises(ValidationError):
             events.StateSnapshotEvent(location=(1, 1))
 
+    @staticmethod
+    def test_event_serializes_when_screenshot_is_path():
+        subject = events.StateSnapshotEvent(screenshot=Path("."), location=(1, 1))
+
+        actual = subject.json()
+
+        actual_dict = json.loads(actual)
+        assert_timestamp_is_close(actual_dict)
+        actual_dict.pop("timestamp")
+        assert actual_dict == {"screenshot": ".", "device": "state", "location": {"x": 1, "y": 1}}
+
+    @staticmethod
+    def test_deserialize_event_when_screenshot_is_path():
+        subject = events.StateSnapshotEvent.parse_raw(
+            '{"timestamp": "2023-05-01T10:26:52.625731", "screenshot": ".", "device": "state", "location": {"x": 1, "y": 1}}'
+        )
+
+        assert subject == events.StateSnapshotEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"), screenshot=Path("."), location=Point(1, 1)
+        )
+
+    @staticmethod
+    def test_event_serializes_when_screenshot_is_image():
+        subject = events.StateSnapshotEvent(screenshot=generate_screenshot(), location=(1, 1))
+
+        actual = subject.json()
+
+        actual_dict = json.loads(actual)
+        assert_timestamp_is_close(actual_dict)
+        actual_dict.pop("timestamp")
+        assert actual_dict == {
+            "screenshot": {"donkey_see_donkey_do": None, "type": "image", "value": generate_screenshot_string()},
+            "device": "state",
+            "location": {"x": 1, "y": 1},
+        }
+
+    @staticmethod
+    def test_deserialize_event_when_screenshot_is_image():
+        json_value = (
+            '{"timestamp": "2023-05-01T10:26:52.625731", "screenshot": {"donkey_see_donkey_do": null, "type": "image", "value": "'
+            + generate_screenshot_string()
+            + '"}, "device": "state", "location": {"x": 1, "y": 1}}'
+        )
+        subject = events.StateSnapshotEvent.parse_raw(json_value)
+
+        expected = events.StateSnapshotEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
+            screenshot=generate_screenshot(),
+            location=Point(1, 1),
+        )
+
+        assert_images_equal(expected.screenshot, subject.screenshot)
+        subject.screenshot = Path(".")
+        expected.screenshot = Path(".")
+        assert subject == expected
+
 
 class TestClickEvent:
     @staticmethod
     def test_sets_device_to_mouse():
-        subject = events.ClickEvent(action="press", button="left", location=(1, 1))
+        subject = events.ClickEvent(action="press", button=MouseButton.LEFT, location=Point(1, 1))
 
         assert subject.device == "mouse"
 
     @staticmethod
     @pytest.mark.parametrize(
-        "mouse_button,expected_instance",
-        [("left", mouse.Button.left), ("right", mouse.Button.right), ("middle", mouse.Button.middle)],
+        "mouse_button",
+        [button for button in MouseButton],
     )
-    def test_pynput_button_returns_correct_instance_when_valid_string_given(mouse_button, expected_instance):
-        subject = events.ClickEvent(action="press", button=mouse_button, location=(1, 1))
+    def test_pin_the_tail_mouse_button_stored_correctly(mouse_button):
+        subject = events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
 
-        assert subject._pynput_button == expected_instance
+        assert subject.button == mouse_button
 
     @staticmethod
     @pytest.mark.parametrize(
         "mouse_button,expected_instance",
-        [("left", MouseButton.LEFT), ("right", MouseButton.RIGHT), ("middle", MouseButton.MIDDLE)],
+        [
+            (mouse.Button.left, MouseButton.LEFT),
+            (mouse.Button.middle, MouseButton.MIDDLE),
+            (mouse.Button.right, MouseButton.RIGHT),
+        ],
+    )
+    def test_pynput_button_stored_correctly(mouse_button, expected_instance):
+        subject = events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
+
+        assert subject.button == expected_instance
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "mouse_button,expected_instance",
+        [
+            (pyautogui.LEFT, MouseButton.LEFT),
+            (pyautogui.MIDDLE, MouseButton.MIDDLE),
+            (pyautogui.RIGHT, MouseButton.RIGHT),
+        ],
+    )
+    def test_pyautogui_button_stored_correctly(mouse_button, expected_instance):
+        subject = events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
+
+        assert subject.button == expected_instance
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "mouse_button",
+        ["leftmore", "right with extra stuff", 1, "not a button name at all"],
+    )
+    def test_invalid_button_raises_validation_error(mouse_button):
+        with pytest.raises(ValidationError):
+            subject = events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "mouse_button,expected_instance",
+        [
+            (MouseButton.LEFT, mouse.Button.left),
+            (MouseButton.RIGHT, mouse.Button.right),
+            (MouseButton.MIDDLE, mouse.Button.middle),
+        ],
+    )
+    def test_pynput_button_returns_correct_instance_when_valid_string_given(mouse_button, expected_instance):
+        subject = events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
+
+        assert subject.pynput_button == expected_instance
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "mouse_button,expected_instance",
+        [
+            (MouseButton.LEFT, pyautogui.LEFT),
+            (MouseButton.RIGHT, pyautogui.RIGHT),
+            (MouseButton.MIDDLE, pyautogui.MIDDLE),
+        ],
     )
     def test_pin_the_tail_button_returns_correct_instance_when_valid_string_given(mouse_button, expected_instance):
-        subject = events.ClickEvent(action="press", button=mouse_button, location=(1, 1))
+        subject = events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
 
-        assert subject.pin_the_tail_button == expected_instance
+        assert subject.pyautogui_button == expected_instance
 
     @staticmethod
     @pytest.mark.parametrize("action", ("press", "release", "click"))
-    def test_action_is_stored(action):
-        subject = events.ClickEvent(action=action, button="left", location=(1, 1))
+    def test_valid_actions_are_stored(action):
+        subject = events.ClickEvent(action=action, button="left", location=Point(1, 1))
 
         assert subject.action == action
+
+    @staticmethod
+    @pytest.mark.parametrize("action", ("invalid", "pressmore", "press with other stuff", 1))
+    def test_error_raised_when_action_is_not_valid(action):
+        with pytest.raises(ValidationError):
+            subject = events.ClickEvent(action=action, button="left", location=(1, 1))
 
 
 class TestScrollEvent:
     @staticmethod
-    def test_creating_initial_scroll_event():
+    def test_creating_scroll_event():
         frozen_time = datetime(2023, 4, 28, 7, 49, 12)
         with freeze_time(frozen_time):
-            subject = events.ScrollEvent(location=(1, 1))
-            subject.append_action(5, 7)
+            subject = events.ScrollEvent(location=(1, 1), scroll=(5, 7))
 
         assert subject.device == "mouse"
         assert subject.action == "scroll"
         assert subject.location == Point(1, 1)
         # assert subject.timestamp == frozen_time  # freezegun / pydantic interaction bug: https://github.com/spulec/freezegun/issues/480
-        assert subject.scroll_actions == [ScrollChange(PointChange(5, 7), frozen_time)]
+        assert subject.scroll == (5, 7)

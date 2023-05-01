@@ -6,12 +6,14 @@ from io import BytesIO
 from pathlib import Path
 from typing import List, Literal, Optional, Tuple, Union
 
+import pyautogui
 import pydantic
 from PIL import Image
 from pin_the_tail.interaction import MouseButton
 from pin_the_tail.location import Point
 from pydantic import BaseModel, Field
-from pynput import keyboard, mouse
+from pynput import keyboard
+from pynput import mouse as pynput_mouse
 
 KeyType = Union[keyboard.Key, str]
 
@@ -21,7 +23,11 @@ def model_json_dumps(val, *, default):
         if isinstance(value, Image.Image):
             buffer = BytesIO()
             value.save(buffer, format="PNG")
-            return base64.b64encode(buffer.getvalue()).decode("ascii")
+            return {
+                "donkey_see_donkey_do": None,
+                "type": "image",
+                "value": base64.b64encode(buffer.getvalue()).decode("ascii"),
+            }
         if isinstance(value, keyboard.Key):
             return {"donkey_see_donkey_do": None, "type": "key", "key": value.name}
         return default(value)
@@ -31,15 +37,13 @@ def model_json_dumps(val, *, default):
 
 def model_json_loads(value):
     def obj_hook(val):
-        screenshot = val.get("screenshot")
-        if screenshot is not None:
-            buffer = BytesIO()
-            buffer.write(base64.b64decode(screenshot.encode("ascii")))
-            val["screenshot"] = Image.open(buffer, formats=("PNG",))
-
         if "donkey_see_donkey_do" in val:
             if val["type"] == "key":
                 val = keyboard.Key[val["key"]]
+            elif val["type"] == "image":
+                buffer = BytesIO()
+                buffer.write(base64.b64decode(val["value"].encode("ascii")))
+                val = Image.open(buffer, formats=("PNG",))
             else:
                 raise ValueError(f"Unrecognized type: {val['type']}")
 
@@ -89,7 +93,12 @@ class StateSnapshotEvent(BaseEvent):
     location: Point
 
 
-class MouseEvent(BaseEvent):
+class BaseMouseEvent(BaseEvent):
+    """
+    Basic model for mouse events.  In addition to the fields from ``BaseEvent``, it stores the ``device`` as ``"mouse"``
+    and the ``location`` of the mouse.
+    """
+
     device: Literal["mouse"] = "mouse"
     location: Point
 
@@ -107,37 +116,63 @@ class MouseEvent(BaseEvent):
         return value
 
 
-class ClickEvent(MouseEvent):
-    action: Literal["press", "release", "click"]
-    button: str
+class ClickEvent(BaseMouseEvent):
+    action: str
+    button: MouseButton
+
+    @pydantic.validator("action")
+    def action_is_valid_value(cls, value) -> str:
+        original_value = value
+        value = value.lower()
+        if value not in {"press", "release", "click"}:
+            raise ValueError(f"action must be 'press', 'release', or 'click'; received {original_value!r}")
+        return value
+
+    @pydantic.validator("button", pre=True)
+    def button_is_converted_to_mousebutton(cls, value) -> MouseButton:
+        print("validating:", value)
+        if isinstance(value, MouseButton):
+            return value
+
+        button_mapping = {
+            pyautogui.LEFT: MouseButton.LEFT,
+            "left": MouseButton.LEFT,
+            pynput_mouse.Button.left: MouseButton.LEFT,
+            pyautogui.MIDDLE: MouseButton.MIDDLE,
+            "middle": MouseButton.MIDDLE,
+            "center": MouseButton.MIDDLE,
+            pynput_mouse.Button.middle: MouseButton.MIDDLE,
+            pyautogui.RIGHT: MouseButton.RIGHT,
+            "right": MouseButton.RIGHT,
+            pynput_mouse.Button.right: MouseButton.RIGHT,
+        }
+        original_value = value
+        if isinstance(value, str):
+            value = value.lower()
+
+        try:
+            return button_mapping[value]
+        except KeyError:
+            raise ValueError(f"Unrecognized value for mouse button; received {original_value!r}")
 
     @property
-    def _pynput_button(self) -> mouse.Button:
-        return mouse.Button[self.button]
+    def pynput_button(self) -> pynput_mouse.Button:
+        return pynput_mouse.Button[self.button.value.lower()]
 
     @property
-    def pin_the_tail_button(self) -> MouseButton:
-        return MouseButton(self.button)
+    def pyautogui_button(self) -> str:
+        return self.button.pyautogui_button
 
 
-class ScrollEvent(MouseEvent):
+class ScrollEvent(BaseMouseEvent):
     action: Literal["scroll"] = "scroll"
-    scroll_actions: List[ScrollChange] = Field(default_factory=list)
-
-    def append_action(self, dx: int, dy: int) -> None:
-        self.scroll_actions.append(ScrollChange(PointChange(dx, dy), datetime.now()))
-
-    @property
-    def last_action_timestamp(self) -> datetime:
-        return self.scroll_actions[-1].timestamp
+    scroll: Tuple[int, int]
 
 
 class KeyboardEvent(BaseEvent):
     device: Literal["keyboard"] = "keyboard"
-    key_actions: List[Tuple[KeyType, Literal["press", "release", "write"], datetime]] = Field(default_factory=list)
-
-    def append_action(self, key: KeyType, action: Literal["press", "release", "write"]) -> None:
-        self.key_actions.append((key, action, datetime.now()))
+    key: KeyType
+    action: Literal["press", "release", "write"]
 
 
 RealEventsType = Union[StateSnapshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
