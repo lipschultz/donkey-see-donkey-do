@@ -5,7 +5,6 @@ from pathlib import Path
 import numpy as np
 import pyautogui
 import pytest
-from freezegun import freeze_time
 from PIL import Image, ImageChops
 from pin_the_tail.interaction import MouseButton
 from pin_the_tail.location import Point
@@ -253,13 +252,31 @@ class TestClickEvent:
 
 class TestScrollEvent:
     @staticmethod
-    def test_creating_scroll_event():
-        frozen_time = datetime(2023, 4, 28, 7, 49, 12)
-        with freeze_time(frozen_time):
-            subject = events.ScrollEvent(location=(1, 1), scroll=(5, 7))
+    def test_event_serializes():
+        subject = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
 
-        assert subject.device == "mouse"
-        assert subject.action == "scroll"
-        assert subject.location == Point(1, 1)
-        # assert subject.timestamp == frozen_time  # freezegun / pydantic interaction bug: https://github.com/spulec/freezegun/issues/480
-        assert subject.scroll == (5, 7)
+        actual = subject.json()
+
+        assert_serialized_objects_equal(
+            actual,
+            {
+                "screenshot": None,
+                "device": "mouse",
+                "action": "scroll",
+                "location": {"x": 1, "y": 1},
+                "scroll": [-2, 5],
+            },
+        )
+
+    @staticmethod
+    def test_deserialize_event():
+        subject = events.ScrollEvent.parse_raw(
+            '{"timestamp": "2023-05-01T10:26:52.625731", "screenshot": null, "device": "mouse", "action": "scroll", "location": {"x": 1, "y": 1}, "scroll": [-2, 5]}'
+        )
+
+        assert subject == events.ScrollEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
+            action="scroll",
+            location=Point(1, 1),
+            scroll=(-2, 5),
+        )

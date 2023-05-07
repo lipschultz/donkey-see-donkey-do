@@ -45,7 +45,7 @@ def model_json_loads(value):
                 buffer.write(base64.b64decode(val["value"].encode("ascii")))
                 val = Image.open(buffer, formats=("PNG",))
             else:
-                raise ValueError(f"Unrecognized type: {val['type']}")
+                raise ValueError(f"Unrecognized type: {val['type']}")  # pragma: no cover
 
         return val
 
