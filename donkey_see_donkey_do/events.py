@@ -4,18 +4,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import List, Literal, Optional, Tuple, Union
+from typing import List, Literal, Optional, Union
 
 import pyautogui
 import pydantic
 from PIL import Image
-from pin_the_tail.interaction import MouseButton
+from pin_the_tail.interaction import KeyType, MouseButton
 from pin_the_tail.location import Point
 from pydantic import BaseModel, Field
 from pynput import keyboard
 from pynput import mouse as pynput_mouse
-
-KeyType = Union[keyboard.Key, str]
 
 
 def model_json_dumps(val, *, default):
@@ -56,12 +54,6 @@ def model_json_loads(value):
 class PointChange:
     dx: int
     dy: int
-
-
-@dataclass
-class ScrollChange:
-    scroll: PointChange
-    timestamp: datetime
 
 
 class BaseEvent(BaseModel):
@@ -157,22 +149,24 @@ class ClickEvent(BaseMouseEvent):
 
     @property
     def pynput_button(self) -> pynput_mouse.Button:
+        """Get the pynput representation of the button pressed."""
         return pynput_mouse.Button[self.button.value.lower()]
 
     @property
     def pyautogui_button(self) -> str:
+        """Get the pyautogui representation of the button pressed."""
         return self.button.pyautogui_button
 
 
 class ScrollEvent(BaseMouseEvent):
     action: Literal["scroll"] = "scroll"
-    scroll: Tuple[int, int]
+    scroll: PointChange
 
 
 class KeyboardEvent(BaseEvent):
     device: Literal["keyboard"] = "keyboard"
-    key: KeyType
     action: Literal["press", "release", "write"]
+    key: KeyType
 
 
 RealEventsType = Union[StateSnapshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
