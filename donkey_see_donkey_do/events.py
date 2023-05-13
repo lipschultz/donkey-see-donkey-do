@@ -57,6 +57,7 @@ class PointChange:
 
 
 class BaseEvent(BaseModel):
+    # pylint: disable=too-few-public-methods
     """
     Basic model for events.
 
@@ -69,12 +70,14 @@ class BaseEvent(BaseModel):
     screenshot: Optional[Union[Image.Image, Path]] = None
 
     class Config:
+        # pylint: disable=too-few-public-methods
         arbitrary_types_allowed = True
         json_loads = model_json_loads
         json_dumps = model_json_dumps
 
 
 class StateSnapshotEvent(BaseEvent):
+    # pylint: disable=too-few-public-methods
     """
     Event representing the general state of the screen, including what the screen currently looks like and the location
     of the mouse.
@@ -86,6 +89,7 @@ class StateSnapshotEvent(BaseEvent):
 
 
 class BaseMouseEvent(BaseEvent):
+    # pylint: disable=too-few-public-methods
     """
     Basic model for mouse events.  In addition to the fields from ``BaseEvent``, it stores the ``device`` as ``"mouse"``
     and the ``location`` of the mouse.
@@ -158,6 +162,7 @@ class ClickEvent(BaseMouseEvent):
 
 
 class ScrollEvent(BaseMouseEvent):
+    # pylint: disable=too-few-public-methods
     action: Literal["scroll"] = "scroll"
     scroll: PointChange
 
@@ -196,6 +201,7 @@ class Events(BaseModel):
         return self.__root__[item]
 
     class Config:
+        # pylint: disable=too-few-public-methods
         arbitrary_types_allowed = True
         json_loads = model_json_loads
         json_dumps = model_json_dumps

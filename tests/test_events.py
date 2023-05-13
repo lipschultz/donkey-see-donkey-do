@@ -52,7 +52,10 @@ def generate_screenshot() -> Image.Image:
 
 
 def generate_screenshot_string() -> str:
-    return "iVBORw0KGgoAAAANSUhEUgAAADIAAAAZCAIAAAD8NuoTAAAAG0lEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAODeAA6/AAFIxA5aAAAAAElFTkSuQmCC"
+    return (
+        "iVBORw0KGgoAAAANSUhEUgAAADIAAAAZCAIAAAD8NuoTAAAAG0lEQVR4nO3BMQEAAADCoPVPbQ0PoAAAAODeAA6/AAFIxA5aAAAAAElFT"
+        "kSuQmCC"
+    )
 
 
 def assert_images_equal(img1, img2):
@@ -90,7 +93,14 @@ class TestStateSnapshotEvent:
     @staticmethod
     def test_deserialize_event_when_screenshot_is_path():
         subject = events.StateSnapshotEvent.parse_raw(
-            '{"timestamp": "2023-05-01T10:26:52.625731", "screenshot": ".", "device": "state", "location": {"x": 1, "y": 1}}'
+            json.dumps(
+                {
+                    "timestamp": "2023-05-01T10:26:52.625731",
+                    "screenshot": ".",
+                    "device": "state",
+                    "location": {"x": 1, "y": 1},
+                }
+            )
         )
 
         assert subject == events.StateSnapshotEvent(
@@ -114,10 +124,13 @@ class TestStateSnapshotEvent:
 
     @staticmethod
     def test_deserialize_event_when_screenshot_is_image():
-        json_value = (
-            '{"timestamp": "2023-05-01T10:26:52.625731", "screenshot": {"donkey_see_donkey_do": null, "type": "image", "value": "'
-            + generate_screenshot_string()
-            + '"}, "device": "state", "location": {"x": 1, "y": 1}}'
+        json_value = json.dumps(
+            {
+                "timestamp": "2023-05-01T10:26:52.625731",
+                "screenshot": {"donkey_see_donkey_do": None, "type": "image", "value": generate_screenshot_string()},
+                "device": "state",
+                "location": {"x": 1, "y": 1},
+            }
         )
         subject = events.StateSnapshotEvent.parse_raw(json_value)
 
@@ -141,10 +154,7 @@ class TestClickEvent:
         assert subject.device == "mouse"
 
     @staticmethod
-    @pytest.mark.parametrize(
-        "mouse_button",
-        [button for button in MouseButton],
-    )
+    @pytest.mark.parametrize("mouse_button", list(MouseButton))
     def test_pin_the_tail_mouse_button_stored_correctly(mouse_button):
         subject = events.ClickEvent(action="press", button=mouse_button, location=Point(1, 1))
 
@@ -248,7 +258,16 @@ class TestClickEvent:
     @staticmethod
     def test_deserialize_event():
         subject = events.ClickEvent.parse_raw(
-            '{"timestamp": "2023-05-01T10:26:52.625731", "screenshot": null, "device": "mouse", "action": "release", "button": "left", "location": {"x": 1, "y": 1}}'
+            json.dumps(
+                {
+                    "timestamp": "2023-05-01T10:26:52.625731",
+                    "screenshot": None,
+                    "device": "mouse",
+                    "action": "release",
+                    "button": "left",
+                    "location": {"x": 1, "y": 1},
+                }
+            )
         )
 
         assert subject == events.ClickEvent(
@@ -280,7 +299,16 @@ class TestScrollEvent:
     @staticmethod
     def test_deserialize_event():
         subject = events.ScrollEvent.parse_raw(
-            '{"timestamp": "2023-05-01T10:26:52.625731", "screenshot": null, "device": "mouse", "action": "scroll", "location": {"x": 1, "y": 1}, "scroll": {"dx": -2, "dy": 5}}'
+            json.dumps(
+                {
+                    "timestamp": "2023-05-01T10:26:52.625731",
+                    "screenshot": None,
+                    "device": "mouse",
+                    "action": "scroll",
+                    "location": {"x": 1, "y": 1},
+                    "scroll": {"dx": -2, "dy": 5},
+                }
+            )
         )
 
         assert subject == events.ScrollEvent(
@@ -299,8 +327,9 @@ class TestScrollEvent:
         assert subject.device == "mouse"
         assert subject.action == "scroll"
         assert subject.location == Point(1, 1)
-        # assert subject.timestamp == frozen_time  # freezegun / pydantic interaction bug: https://github.com/spulec/freezegun/issues/480
         assert subject.scroll == PointChange(5, 7)
+        # freezegun / pydantic interaction bug: https://github.com/spulec/freezegun/issues/480
+        # assert subject.timestamp == frozen_time
 
 
 class TestKeyboardEvent:
@@ -345,18 +374,20 @@ class TestKeyboardEvent:
     @pytest.mark.parametrize("key", [SpecialKey.ALT, "a"])
     def test_deserialize_event(key):
         if isinstance(key, str):
-            json_key_field = f'"{key}"'
+            json_key_field = key
         else:
-            json_key_field = f'{{"donkey_see_donkey_do": null, "type": "key", "key": "{key.value}"}}'
+            json_key_field = {"donkey_see_donkey_do": None, "type": "key", "key": key.value}
 
         subject = events.KeyboardEvent.parse_raw(
-            f"{{"
-            f'"timestamp": "2023-05-01T10:26:52.625731", '
-            f'"screenshot": null, '
-            f'"device": "keyboard", '
-            f'"action": "press", '
-            f'"key": {json_key_field}'
-            f"}}"
+            json.dumps(
+                {
+                    "timestamp": "2023-05-01T10:26:52.625731",
+                    "screenshot": None,
+                    "device": "keyboard",
+                    "action": "press",
+                    "key": json_key_field,
+                }
+            )
         )
 
         assert subject == events.KeyboardEvent(
