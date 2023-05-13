@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Union
 
 import numpy as np
 import pyautogui
@@ -24,17 +25,23 @@ def assert_timestamp_is_close(event_json, expected_timestamp=None):
     assert (expected_timestamp - datetime.fromisoformat(event_json["timestamp"])).total_seconds() < 1
 
 
-def assert_serialized_objects_equal(actual: str, expected: dict):
-    actual_dict = json.loads(actual)
+def assert_serialized_objects_equal(actual: str, expected: Union[dict, list]):
+    actual_parsed = json.loads(actual)
 
-    try:
-        expected_timestamp = expected.pop("timestamp")
-    except KeyError:
-        expected_timestamp = None
-    assert_timestamp_is_close(actual_dict, expected_timestamp)
-    actual_dict.pop("timestamp")
+    if isinstance(expected, list):
+        assert isinstance(actual_parsed, list)
+        assert len(actual_parsed) == len(expected)
+        for actual_element, expected_element in zip(actual_parsed, expected):
+            assert_serialized_objects_equal(json.dumps(actual_element), expected_element)
+    else:
+        try:
+            expected_timestamp = expected.pop("timestamp")
+        except KeyError:
+            expected_timestamp = None
+        assert_timestamp_is_close(actual_parsed, expected_timestamp)
+        actual_parsed.pop("timestamp")
 
-    assert actual_dict == expected
+        assert actual_parsed == expected
 
 
 def generate_screenshot() -> Image.Image:
@@ -356,4 +363,132 @@ class TestKeyboardEvent:
             timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
             action="press",
             key=key,
+        )
+
+
+class TestEvents:
+    @staticmethod
+    def test_length_represents_number_of_events_saved():
+        event1 = events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1))
+        event2 = events.ClickEvent(action="press", button=MouseButton.LEFT, location=Point(1, 1))
+        event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
+        event4 = events.KeyboardEvent(action="press", key="a")
+
+        all_events = events.Events()
+        all_events.append(event1)
+        all_events.append(event2)
+        all_events.append(event3)
+        all_events.append(event4)
+
+        assert len(all_events) == 4
+
+    @staticmethod
+    def test_getting_element():
+        event1 = events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1))
+        event2 = events.ClickEvent(action="press", button=MouseButton.LEFT, location=Point(1, 1))
+        event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
+        event4 = events.KeyboardEvent(action="press", key="a")
+
+        all_events = events.Events()
+        all_events.append(event1)
+        all_events.append(event2)
+        all_events.append(event3)
+        all_events.append(event4)
+
+        assert all_events[2] == event3
+
+    @staticmethod
+    def test_events_serializes():
+        event1 = events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1))
+        event2 = events.ClickEvent(action="release", button=MouseButton.LEFT, location=Point(1, 1))
+        event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
+        event4 = events.KeyboardEvent(action="press", key=SpecialKey.ALT)
+
+        subject = events.Events()
+        subject.append(event1)
+        subject.append(event2)
+        subject.append(event3)
+        subject.append(event4)
+
+        actual = subject.json()
+
+        expected = [
+            {"screenshot": ".", "device": "state", "location": {"x": 1, "y": 1}},
+            {
+                "screenshot": None,
+                "device": "mouse",
+                "action": "release",
+                "button": "left",
+                "location": {"x": 1, "y": 1},
+            },
+            {
+                "screenshot": None,
+                "device": "mouse",
+                "action": "scroll",
+                "location": {"x": 1, "y": 1},
+                "scroll": {"dx": -2, "dy": 5},
+            },
+            {
+                "screenshot": None,
+                "device": "keyboard",
+                "action": "press",
+                "key": {"donkey_see_donkey_do": None, "type": "key", "key": SpecialKey.ALT.value},
+            },
+        ]
+
+        assert_serialized_objects_equal(actual, expected)
+
+    @staticmethod
+    def test_deserialize_event():
+        subject = events.Events.parse_raw(
+            json.dumps(
+                [
+                    {
+                        "timestamp": "2023-05-01T10:26:52.625731",
+                        "screenshot": ".",
+                        "device": "state",
+                        "location": {"x": 1, "y": 1},
+                    },
+                    {
+                        "timestamp": "2023-05-01T10:26:52.625731",
+                        "screenshot": None,
+                        "device": "mouse",
+                        "action": "release",
+                        "button": "left",
+                        "location": {"x": 1, "y": 1},
+                    },
+                    {
+                        "timestamp": "2023-05-01T10:26:52.625731",
+                        "screenshot": None,
+                        "device": "mouse",
+                        "action": "scroll",
+                        "location": {"x": 1, "y": 1},
+                        "scroll": {"dx": -2, "dy": 5},
+                    },
+                    {
+                        "timestamp": "2023-05-01T10:26:52.625731",
+                        "screenshot": None,
+                        "device": "keyboard",
+                        "action": "press",
+                        "key": {"donkey_see_donkey_do": None, "type": "key", "key": SpecialKey.ALT.value},
+                    },
+                ]
+            )
+        )
+
+        assert len(subject) == 4
+        assert subject[0] == events.StateSnapshotEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"), screenshot=Path("."), location=Point(1, 1)
+        )
+        assert subject[1] == events.ClickEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
+            action="release",
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+        )
+        assert subject[2] == events.ScrollEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"), location=Point(1, 1), scroll=(-2, 5)
+        )
+        assert subject[3] == events.KeyboardEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"), action="press", key=SpecialKey.ALT
         )
