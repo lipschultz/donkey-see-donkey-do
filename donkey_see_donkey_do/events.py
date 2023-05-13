@@ -9,7 +9,7 @@ from typing import List, Literal, Optional, Union
 import pyautogui
 import pydantic
 from PIL import Image
-from pin_the_tail.interaction import KeyType, MouseButton
+from pin_the_tail.interaction import MouseButton, SpecialKey
 from pin_the_tail.location import Point
 from pydantic import BaseModel, Field
 from pynput import keyboard
@@ -26,8 +26,8 @@ def model_json_dumps(val, *, default):
                 "type": "image",
                 "value": base64.b64encode(buffer.getvalue()).decode("ascii"),
             }
-        if isinstance(value, keyboard.Key):
-            return {"donkey_see_donkey_do": None, "type": "key", "key": value.name}
+        if isinstance(value, SpecialKey):
+            return {"donkey_see_donkey_do": None, "type": "key", "key": value.value}
         return default(value)
 
     return json.dumps(val, default=basic_default)
@@ -37,7 +37,7 @@ def model_json_loads(value):
     def obj_hook(val):
         if "donkey_see_donkey_do" in val:
             if val["type"] == "key":
-                val = keyboard.Key[val["key"]]
+                val = SpecialKey(val["key"])
             elif val["type"] == "image":
                 buffer = BytesIO()
                 buffer.write(base64.b64decode(val["value"].encode("ascii")))
@@ -122,7 +122,6 @@ class ClickEvent(BaseMouseEvent):
 
     @pydantic.validator("button", pre=True)
     def button_is_converted_to_mousebutton(cls, value) -> MouseButton:
-        print("validating:", value)
         if isinstance(value, MouseButton):
             return value
 
@@ -166,22 +165,34 @@ class ScrollEvent(BaseMouseEvent):
 class KeyboardEvent(BaseEvent):
     device: Literal["keyboard"] = "keyboard"
     action: Literal["press", "release", "write"]
-    key: KeyType
+    key: Union[str, SpecialKey]
+
+    @property
+    def pynput_key(self) -> Union[keyboard.Key, str]:
+        """Get the pynput representation of the key pressed."""
+        raise NotImplementedError
+
+    @property
+    def pyautogui_key(self) -> str:
+        """Get the pyautogui representation of the key pressed."""
+        if isinstance(self.key, str):
+            return self.key
+        return self.key.pyautogui_key
 
 
-RealEventsType = Union[StateSnapshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
+RealEventType = Union[StateSnapshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
 
 
 class Events(BaseModel):
-    __root__: List[RealEventsType] = Field(default_factory=list)
+    __root__: List[RealEventType] = Field(default_factory=list)
 
     def __len__(self) -> int:
         return len(self.__root__)
 
-    def append(self, item: RealEventsType) -> None:
+    def append(self, item: RealEventType) -> None:
         self.__root__.append(item)
 
-    def __getitem__(self, item: int) -> RealEventsType:
+    def __getitem__(self, item: int) -> RealEventType:
         return self.__root__[item]
 
     class Config:

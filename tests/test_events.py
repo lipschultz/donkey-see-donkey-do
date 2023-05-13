@@ -7,7 +7,7 @@ import pyautogui
 import pytest
 from freezegun import freeze_time
 from PIL import Image, ImageChops
-from pin_the_tail.interaction import MouseButton
+from pin_the_tail.interaction import MouseButton, SpecialKey
 from pin_the_tail.location import Point
 from pydantic import ValidationError
 from pynput import mouse
@@ -294,3 +294,66 @@ class TestScrollEvent:
         assert subject.location == Point(1, 1)
         # assert subject.timestamp == frozen_time  # freezegun / pydantic interaction bug: https://github.com/spulec/freezegun/issues/480
         assert subject.scroll == PointChange(5, 7)
+
+
+class TestKeyboardEvent:
+    @staticmethod
+    @pytest.mark.parametrize("character", ["a", "A", "1", ".", "\t"])
+    @pytest.mark.parametrize("action", ["press", "release", "write"])
+    def test_creating_keyboard_event_with_character_key(character, action):
+        subject = events.KeyboardEvent(action=action, key=character)
+
+        assert subject.device == "keyboard"
+        assert subject.action == action
+        assert subject.key == character
+
+    @staticmethod
+    @pytest.mark.parametrize("key", [SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("action", ["press", "release", "write"])
+    def test_creating_keyboard_event_with_special_key(key, action):
+        subject = events.KeyboardEvent(action=action, key=key)
+
+        assert subject.device == "keyboard"
+        assert subject.action == action
+        assert subject.key == key
+
+    @staticmethod
+    @pytest.mark.parametrize("key", [SpecialKey.ALT, "a"])
+    def test_event_serializes(key):
+        subject = events.KeyboardEvent(action="press", key=key)
+
+        actual = subject.json()
+
+        assert_serialized_objects_equal(
+            actual,
+            {
+                "screenshot": None,
+                "device": "keyboard",
+                "action": "press",
+                "key": key if isinstance(key, str) else {"donkey_see_donkey_do": None, "type": "key", "key": key.value},
+            },
+        )
+
+    @staticmethod
+    @pytest.mark.parametrize("key", [SpecialKey.ALT, "a"])
+    def test_deserialize_event(key):
+        if isinstance(key, str):
+            json_key_field = f'"{key}"'
+        else:
+            json_key_field = f'{{"donkey_see_donkey_do": null, "type": "key", "key": "{key.value}"}}'
+
+        subject = events.KeyboardEvent.parse_raw(
+            f"{{"
+            f'"timestamp": "2023-05-01T10:26:52.625731", '
+            f'"screenshot": null, '
+            f'"device": "keyboard", '
+            f'"action": "press", '
+            f'"key": {json_key_field}'
+            f"}}"
+        )
+
+        assert subject == events.KeyboardEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
+            action="press",
+            key=key,
+        )
