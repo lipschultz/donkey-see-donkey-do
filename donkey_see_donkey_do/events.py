@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import List, Literal, Optional, Union
+from typing import Iterable, List, Literal, Optional, Union
 
 import pyautogui
 import pydantic
@@ -190,6 +190,11 @@ RealEventType = Union[StateSnapshotEvent, ClickEvent, ScrollEvent, KeyboardEvent
 
 class Events(BaseModel):
     __root__: List[RealEventType] = Field(default_factory=list)
+
+    @classmethod
+    def from_iterable(cls, iterable: Iterable[RealEventType]) -> "Events":
+        """Create an ``Events`` instance from the iterable."""
+        return cls(__root__=list(iterable))
 
     def __len__(self) -> int:
         return len(self.__root__)
