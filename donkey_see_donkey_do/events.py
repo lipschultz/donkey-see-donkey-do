@@ -112,7 +112,7 @@ class BaseMouseEvent(BaseEvent):
         return value
 
 
-class ClickEvent(BaseMouseEvent):
+class MouseButtonEvent(BaseMouseEvent):
     action: str
     button: MouseButton
 
@@ -161,6 +161,32 @@ class ClickEvent(BaseMouseEvent):
         return self.button.pyautogui_button
 
 
+class ClickEvent(MouseButtonEvent):
+    action: Literal["click"] = "click"
+    n_clicks: int = 1
+
+    @pydantic.validator("n_clicks")
+    def n_clicks_is_positive(cls, value) -> int:
+        """n_clicks must be an integer greater than 0."""
+        if value < 1:
+            raise ValueError(f"n_clicks must be an integer greater than 0; received {value!r}")
+        return value
+
+    @classmethod
+    def from_mouse_button_event(cls, mouse_button_event: MouseButtonEvent) -> "ClickEvent":
+        """Given a mouse button event where the action='click', create a ClickEvent."""
+        if mouse_button_event.action != "click":
+            raise ValueError(
+                f"Only click MouseButtonEvents can be converted into ClickEvents; received {mouse_button_event!r}"
+            )
+        return ClickEvent(
+            timestamp=mouse_button_event.timestamp,
+            screenshot=mouse_button_event.screenshot,
+            location=mouse_button_event.location,
+            button=mouse_button_event.button,
+        )
+
+
 class ScrollEvent(BaseMouseEvent):
     # pylint: disable=too-few-public-methods
     action: Literal["scroll"] = "scroll"
@@ -185,7 +211,7 @@ class KeyboardEvent(BaseEvent):
         return self.key.pyautogui_key
 
 
-RealEventType = Union[StateSnapshotEvent, ClickEvent, ScrollEvent, KeyboardEvent]
+RealEventType = Union[StateSnapshotEvent, MouseButtonEvent, ClickEvent, ScrollEvent, KeyboardEvent]
 
 
 class Events(BaseModel):

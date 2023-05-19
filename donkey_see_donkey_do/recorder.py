@@ -6,7 +6,7 @@ from PIL import Image
 from pynput import keyboard, mouse
 from pynput.mouse import Button
 
-from donkey_see_donkey_do.events import ClickEvent, Events, KeyboardEvent, ScrollEvent, StateSnapshotEvent
+from donkey_see_donkey_do.events import Events, KeyboardEvent, MouseButtonEvent, ScrollEvent, StateSnapshotEvent
 
 
 class Recorder:
@@ -28,7 +28,7 @@ class Recorder:
         return pyautogui.screenshot()
 
     def _on_click(self, x: int, y: int, button: Button, is_press: bool):
-        event = ClickEvent(
+        event = MouseButtonEvent(
             screenshot=self._get_screenshot(),
             location=(x, y),
             action="press" if is_press else "release",
