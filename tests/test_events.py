@@ -518,6 +518,39 @@ class TestEvents:
         assert all_events[2] == event3
 
     @staticmethod
+    def test_iterating_over_elements():
+        event_collection = [
+            events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+            events.MouseButtonEvent(action="press", button=MouseButton.LEFT, location=Point(1, 1)),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(action="press", key="a"),
+            events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+        ]
+
+        subject = events.Events()
+        for event in event_collection:
+            subject.append(event)
+
+        for i, event in enumerate(subject):
+            assert event == event_collection[i]
+
+    @staticmethod
+    @pytest.mark.parametrize("iterable_type", [list, tuple, iter])
+    def test_from_iterable(iterable_type):
+        event_collection = [
+            events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+            events.MouseButtonEvent(action="press", button=MouseButton.LEFT, location=Point(1, 1)),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(action="press", key="a"),
+            events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+        ]
+
+        subject = events.Events.from_iterable(iterable_type(event_collection))
+
+        for i, event in enumerate(subject):
+            assert event == event_collection[i]
+
+    @staticmethod
     def test_events_serializes():
         event1 = events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1))
         event2 = events.MouseButtonEvent(action="release", button=MouseButton.LEFT, location=Point(1, 1))
@@ -569,7 +602,7 @@ class TestEvents:
         assert_serialized_objects_equal(actual, expected)
 
     @staticmethod
-    def test_deserialize_event():
+    def test_deserialize_events():
         subject = events.Events.parse_raw(
             json.dumps(
                 [
@@ -603,6 +636,7 @@ class TestEvents:
                         "key": {"donkey_see_donkey_do": None, "type": "key", "key": SpecialKey.ALT.value},
                     },
                     {
+                        "timestamp": "2023-05-01T10:26:52.625731",
                         "screenshot": None,
                         "device": "mouse",
                         "action": "click",

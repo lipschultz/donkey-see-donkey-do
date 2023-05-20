@@ -11,7 +11,7 @@ import pydantic
 from PIL import Image
 from pin_the_tail.interaction import MouseButton, SpecialKey
 from pin_the_tail.location import Point
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 from pynput import keyboard
 from pynput import mouse as pynput_mouse
 
@@ -163,14 +163,7 @@ class MouseButtonEvent(BaseMouseEvent):
 
 class ClickEvent(MouseButtonEvent):
     action: Literal["click"] = "click"
-    n_clicks: int = 1
-
-    @pydantic.validator("n_clicks")
-    def n_clicks_is_positive(cls, value) -> int:
-        """n_clicks must be an integer greater than 0."""
-        if value < 1:
-            raise ValueError(f"n_clicks must be an integer greater than 0; received {value!r}")
-        return value
+    n_clicks: PositiveInt = 1
 
     @classmethod
     def from_mouse_button_event(cls, mouse_button_event: MouseButtonEvent) -> "ClickEvent":
@@ -211,7 +204,7 @@ class KeyboardEvent(BaseEvent):
         return self.key.pyautogui_key
 
 
-RealEventType = Union[StateSnapshotEvent, MouseButtonEvent, ClickEvent, ScrollEvent, KeyboardEvent]
+RealEventType = Union[StateSnapshotEvent, ClickEvent, MouseButtonEvent, ScrollEvent, KeyboardEvent]
 
 
 class Events(BaseModel):
@@ -230,6 +223,9 @@ class Events(BaseModel):
 
     def __getitem__(self, item: int) -> RealEventType:
         return self.__root__[item]
+
+    def __iter__(self):
+        return iter(self.__root__)
 
     class Config:
         # pylint: disable=too-few-public-methods
