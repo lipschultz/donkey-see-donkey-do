@@ -637,3 +637,148 @@ class TestConvertMouseClicksToMultiClicks:
             location=Point(1, 1),
             timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),
         )
+
+
+class TestConvertKeyPressReleaseToWrite:
+    @staticmethod
+    def test_no_key_presses_returns_unaltered_events():
+        subject = events.Events.from_iterable(
+            (
+                events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+                events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+                events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+            )
+        )
+
+        actual_events = simplify.convert_key_press_then_release_to_write(subject)
+
+        assert actual_events == subject
+
+    @staticmethod
+    def test_key_press_release_converted_to_click():
+        event_collection = (
+            events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(action="press", key="a"),
+            events.KeyboardEvent(action="release", key="a"),
+            events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+        )
+        subject = events.Events.from_iterable(event_collection)
+
+        actual_events = simplify.convert_key_press_then_release_to_write(subject)
+
+        expected_write_event = events.WriteEvent(
+            timestamp=event_collection[2].timestamp,
+        )
+        expected_write_event.keys.append("a")
+        assert actual_events == events.Events.from_iterable(
+            event_collection[:2] + (expected_write_event,) + event_collection[4:]
+        )
+
+    @staticmethod
+    def test_key_press_press_not_converted_to_click():
+        event_collection = (
+            events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(action="press", key="a"),
+            events.KeyboardEvent(action="press", key="a"),
+            events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+        )
+        subject = events.Events.from_iterable(event_collection)
+
+        actual_events = simplify.convert_key_press_then_release_to_write(subject)
+
+        assert actual_events == events.Events.from_iterable(event_collection)
+
+    @staticmethod
+    def test_mouse_button_release_release_not_converted_to_click():
+        event_collection = (
+            events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(action="release", key="a"),
+            events.KeyboardEvent(action="release", key="a"),
+            events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+        )
+        subject = events.Events.from_iterable(event_collection)
+
+        actual_events = simplify.convert_key_press_then_release_to_write(subject)
+
+        assert actual_events == events.Events.from_iterable(event_collection)
+
+    @staticmethod
+    def test_mouse_button_press_release_of_different_buttons_not_converted_to_click():
+        event_collection = (
+            events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(action="press", key="a"),
+            events.KeyboardEvent(action="release", key="b"),
+            events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+        )
+        subject = events.Events.from_iterable(event_collection)
+
+        actual_events = simplify.convert_key_press_then_release_to_write(subject)
+
+        assert actual_events == events.Events.from_iterable(event_collection)
+
+    @staticmethod
+    def test_mouse_button_press_release_not_converted_to_click_if_separated_by_too_much_time():
+        event_collection = (
+            events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(
+                action="press", key="a", timestamp=datetime.fromisoformat("2023-05-01T10:00:00.000000")
+            ),
+            events.KeyboardEvent(
+                action="release", key="a", timestamp=datetime.fromisoformat("2023-05-01T11:00:00.000000")
+            ),
+            events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+        )
+        subject = events.Events.from_iterable(event_collection)
+
+        actual_events = simplify.convert_key_press_then_release_to_write(subject, max_seconds=1)
+
+        assert actual_events == events.Events.from_iterable(event_collection)
+
+    @staticmethod
+    def test_mouse_button_press_release_not_converted_to_click_if_separated_by_another_event():
+        event_collection = (
+            events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(action="press", key="a"),
+            events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+            events.KeyboardEvent(action="release", key="a"),
+            events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+        )
+        subject = events.Events.from_iterable(event_collection)
+
+        actual_events = simplify.convert_key_press_then_release_to_write(subject)
+
+        assert actual_events == events.Events.from_iterable(event_collection)
+
+    @staticmethod
+    def test_original_events_are_unmodified():
+        press_event = events.KeyboardEvent(
+            action="press",
+            key="a",
+            timestamp=datetime(2023, 5, 20, 7, 11, 48, 374094),
+        )
+        release_event = events.KeyboardEvent(
+            action="release",
+            key="a",
+            timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),
+        )
+
+        subject = events.Events.from_iterable([press_event, release_event])
+
+        simplify.convert_key_press_then_release_to_write(subject)
+
+        assert press_event == events.KeyboardEvent(
+            action="press",
+            key="a",
+            timestamp=datetime(2023, 5, 20, 7, 11, 48, 374094),
+        )
+        assert release_event == events.KeyboardEvent(
+            action="release",
+            key="a",
+            timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),
+        )

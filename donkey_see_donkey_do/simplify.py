@@ -1,4 +1,11 @@
-from donkey_see_donkey_do.events import ClickEvent, Events, MouseButtonEvent, StateSnapshotEvent
+from donkey_see_donkey_do.events import (
+    ClickEvent,
+    Events,
+    KeyboardEvent,
+    MouseButtonEvent,
+    StateSnapshotEvent,
+    WriteEvent,
+)
 
 
 def drop_consecutive_state_snapshots(events: Events) -> Events:
@@ -77,3 +84,29 @@ def convert_mouse_clicks_to_multi_click(events: Events, max_seconds: float = 0.4
             reversed_saved_events.append(event)
 
     return Events.from_iterable(reversed(reversed_saved_events))
+
+
+def convert_key_press_then_release_to_write(events: Events, max_seconds: float = 0.15) -> Events:
+    """
+    Convert a key press event followed by release event into a write event, as long as the events are consecutive and
+    no more than ``max_seconds`` apart from each other.
+    """
+    new_events = []
+    for event in events:
+        if (
+            len(new_events) > 0
+            and isinstance(event, KeyboardEvent)
+            and isinstance(new_events[-1], KeyboardEvent)
+            and new_events[-1].key == event.key
+            and new_events[-1].action == "press"
+            and event.action == "release"
+            and (event.timestamp - new_events[-1].timestamp).total_seconds() <= max_seconds
+        ):
+            new_events[-1] = WriteEvent.from_keyboard_event(new_events[-1])
+        else:
+            new_events.append(event)
+
+    return Events.from_iterable(new_events)
+
+
+# detect shift + ... -> Uppercase

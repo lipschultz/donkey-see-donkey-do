@@ -1,4 +1,5 @@
 import base64
+import itertools
 import json
 from dataclasses import dataclass
 from datetime import datetime
@@ -9,11 +10,13 @@ from typing import Iterable, List, Literal, Optional, Union
 import pyautogui
 import pydantic
 from PIL import Image
-from pin_the_tail.interaction import MouseButton, SpecialKey
+from pin_the_tail.interaction import KeysToPress, MouseButton, SpecialKey
 from pin_the_tail.location import Point
 from pydantic import BaseModel, Field, PositiveInt
 from pynput import keyboard
 from pynput import mouse as pynput_mouse
+
+KeyType = Union[str, SpecialKey]
 
 
 def model_json_dumps(val, *, default):
@@ -184,8 +187,8 @@ class ScrollEvent(BaseMouseEvent):
 
 class KeyboardEvent(BaseEvent):
     device: Literal["keyboard"] = "keyboard"
-    action: Literal["press", "release", "write"]
-    key: Union[str, SpecialKey]
+    action: Literal["press", "release"]
+    key: KeyType
 
     @property
     def pynput_key(self) -> Union[keyboard.Key, str]:
@@ -200,7 +203,38 @@ class KeyboardEvent(BaseEvent):
         return self.key.pyautogui_key
 
 
-RealEventType = Union[StateSnapshotEvent, ClickEvent, MouseButtonEvent, ScrollEvent, KeyboardEvent]
+class WriteEvent(BaseEvent):
+    device: Literal["keyboard"] = "keyboard"
+    action: Literal["write"] = "write"
+    keys: KeysToPress = Field(default_factory=KeysToPress)
+
+    @classmethod
+    def from_keyboard_event(cls, keyboard_event: KeyboardEvent) -> "WriteEvent":
+        """Given a KeyboardEvent, return a WriteEvent with the same timestamp and key."""
+        event = WriteEvent(timestamp=keyboard_event.timestamp, screenshot=keyboard_event.screenshot)
+        event.keys.append(keyboard_event.key)
+        return event
+
+    @classmethod
+    def from_raw_key(cls, key: Union[KeyType, Iterable[KeyType]]) -> "WriteEvent":
+        """Create a WriteEvent with the given key or iterable of keys."""
+        event = WriteEvent()
+        if isinstance(key, (str, SpecialKey)):
+            key = [key]
+        event.keys.extend(key)
+        return event
+
+    @property
+    def pyautogui_keys(self) -> List[str]:
+        """Get the pyautogui representation of the keys pressed."""
+        return list(
+            itertools.chain.from_iterable(
+                list(key) if isinstance(key, str) else [key.pyautogui_key] for key in self.keys
+            )
+        )
+
+
+RealEventType = Union[StateSnapshotEvent, ClickEvent, MouseButtonEvent, ScrollEvent, KeyboardEvent, WriteEvent]
 
 
 class Events(BaseModel):

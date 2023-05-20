@@ -416,7 +416,7 @@ class TestScrollEvent:
 class TestKeyboardEvent:
     @staticmethod
     @pytest.mark.parametrize("character", ["a", "A", "1", ".", "\t"])
-    @pytest.mark.parametrize("action", ["press", "release", "write"])
+    @pytest.mark.parametrize("action", ["press", "release"])
     def test_creating_keyboard_event_with_character_key(character, action):
         subject = events.KeyboardEvent(action=action, key=character)
 
@@ -426,7 +426,7 @@ class TestKeyboardEvent:
 
     @staticmethod
     @pytest.mark.parametrize("key", [SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
-    @pytest.mark.parametrize("action", ["press", "release", "write"])
+    @pytest.mark.parametrize("action", ["press", "release"])
     def test_creating_keyboard_event_with_special_key(key, action):
         subject = events.KeyboardEvent(action=action, key=key)
 
@@ -478,6 +478,116 @@ class TestKeyboardEvent:
         )
 
 
+class TestWriteEvent:
+    @staticmethod
+    @pytest.mark.parametrize("character", ["a", "A", "1", ".", "\t"])
+    def test_creating_write_event_with_character_key(character):
+        subject = events.WriteEvent()
+        subject.keys.append(character)
+
+        assert subject.device == "keyboard"
+        assert subject.action == "write"
+        assert len(subject.keys) == 1
+        assert subject.keys[0] == character
+
+    @staticmethod
+    @pytest.mark.parametrize("key", [SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    def test_creating_write_event_with_special_key(key):
+        subject = events.WriteEvent()
+        subject.keys.append(key)
+
+        assert subject.device == "keyboard"
+        assert subject.action == "write"
+        assert len(subject.keys) == 1
+        assert subject.keys[0] == key
+
+    @staticmethod
+    @pytest.mark.parametrize("action", ["press", "release"])
+    @pytest.mark.parametrize("key", ["a", "\t", " ", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    def test_creating_write_event_from_keyboard_event(action, key):
+        keyboard_event = events.KeyboardEvent(action=action, key=key)
+        subject = events.WriteEvent.from_keyboard_event(keyboard_event)
+
+        assert len(subject.keys) == 1
+        for field in events.KeyboardEvent.__fields__:
+            if field not in ("action", "key"):
+                assert getattr(keyboard_event, field) == getattr(subject, field)
+            elif field == "action":
+                assert subject.action == "write"
+            elif field == "key":
+                assert subject.keys[0] == keyboard_event.key
+
+    @staticmethod
+    @pytest.mark.parametrize("key", ["a", "\t", " ", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    def test_creating_write_event_from_key(key):
+        subject = events.WriteEvent.from_raw_key(key)
+
+        assert len(subject.keys) == 1
+        assert subject.keys[0] == key
+
+    @staticmethod
+    @pytest.mark.parametrize("key1", ["a", "\t", " ", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("key2", ["a", "\t", " ", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("iterable_type", [list, tuple, iter])
+    def test_creating_write_event_from_keys(key1, key2, iterable_type):
+        subject = events.WriteEvent.from_raw_key(iterable_type([key1, key2]))
+
+        assert len(subject.keys) == 2
+        assert subject.keys[0] == key1
+        assert subject.keys[1] == key2
+
+    @staticmethod
+    @pytest.mark.parametrize("key1", ["a", "\t", " ", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("key2", ["a", "\t", " ", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    def test_event_serializes(key1, key2):
+        subject = events.WriteEvent.from_raw_key([key1, key2])
+
+        actual = subject.json()
+
+        assert_serialized_objects_equal(
+            actual,
+            {
+                "screenshot": None,
+                "device": "keyboard",
+                "action": "write",
+                "keys": [
+                    key1 if isinstance(key1, str) else {"donkey_see_donkey_do": None, "type": "key", "key": key1.value},
+                    key2 if isinstance(key2, str) else {"donkey_see_donkey_do": None, "type": "key", "key": key2.value},
+                ],
+            },
+        )
+
+    @staticmethod
+    @pytest.mark.parametrize("key1", ["a", "\t", " ", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("key2", ["a", "\t", " ", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    def test_deserialize_event(key1, key2):
+        if isinstance(key1, str):
+            json_key1_field = key1
+        else:
+            json_key1_field = {"donkey_see_donkey_do": None, "type": "key", "key": key1.value}
+
+        if isinstance(key2, str):
+            json_key2_field = key2
+        else:
+            json_key2_field = {"donkey_see_donkey_do": None, "type": "key", "key": key2.value}
+
+        subject = events.WriteEvent.parse_raw(
+            json.dumps(
+                {
+                    "timestamp": "2023-05-01T10:26:52.625731",
+                    "screenshot": None,
+                    "device": "keyboard",
+                    "action": "write",
+                    "keys": [json_key1_field, json_key2_field],
+                }
+            )
+        )
+
+        expected = events.WriteEvent(timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"))
+        expected.keys.extend([key1, key2])
+        assert subject == expected
+
+
 class TestEvents:
     @staticmethod
     def test_length_represents_number_of_events_saved():
@@ -486,6 +596,7 @@ class TestEvents:
         event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
         event4 = events.KeyboardEvent(action="press", key="a")
         event5 = events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1))
+        event6 = events.WriteEvent.from_raw_key(["a", SpecialKey.ALT])
 
         all_events = events.Events()
         all_events.append(event1)
@@ -493,8 +604,9 @@ class TestEvents:
         all_events.append(event3)
         all_events.append(event4)
         all_events.append(event5)
+        all_events.append(event6)
 
-        assert len(all_events) == 5
+        assert len(all_events) == 6
 
     @staticmethod
     def test_getting_element():
@@ -503,6 +615,7 @@ class TestEvents:
         event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
         event4 = events.KeyboardEvent(action="press", key="a")
         event5 = events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1))
+        event6 = events.WriteEvent.from_raw_key(["a", SpecialKey.ALT])
 
         all_events = events.Events()
         all_events.append(event1)
@@ -510,6 +623,7 @@ class TestEvents:
         all_events.append(event3)
         all_events.append(event4)
         all_events.append(event5)
+        all_events.append(event6)
 
         assert all_events[2] == event3
 
@@ -521,6 +635,7 @@ class TestEvents:
             events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
             events.KeyboardEvent(action="press", key="a"),
             events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+            events.WriteEvent.from_raw_key(["a", SpecialKey.ALT]),
         ]
 
         subject = events.Events()
@@ -539,6 +654,7 @@ class TestEvents:
             events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
             events.KeyboardEvent(action="press", key="a"),
             events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+            events.WriteEvent.from_raw_key(["a", SpecialKey.ALT]),
         ]
 
         subject = events.Events.from_iterable(iterable_type(event_collection))
@@ -553,6 +669,7 @@ class TestEvents:
         event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
         event4 = events.KeyboardEvent(action="press", key=SpecialKey.ALT)
         event5 = events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1))
+        event6 = events.WriteEvent.from_raw_key(["a", SpecialKey.ALT])
 
         subject = events.Events()
         subject.append(event1)
@@ -560,6 +677,7 @@ class TestEvents:
         subject.append(event3)
         subject.append(event4)
         subject.append(event5)
+        subject.append(event6)
 
         actual = subject.json()
 
@@ -592,6 +710,15 @@ class TestEvents:
                 "button": "left",
                 "location": {"x": 1, "y": 1},
                 "n_clicks": 1,
+            },
+            {
+                "screenshot": None,
+                "device": "keyboard",
+                "action": "write",
+                "keys": [
+                    "a",
+                    {"donkey_see_donkey_do": None, "type": "key", "key": SpecialKey.ALT.value},
+                ],
             },
         ]
 
@@ -640,11 +767,21 @@ class TestEvents:
                         "location": {"x": 1, "y": 1},
                         "n_clicks": 1,
                     },
+                    {
+                        "timestamp": "2023-05-01T10:26:52.625731",
+                        "screenshot": None,
+                        "device": "keyboard",
+                        "action": "write",
+                        "keys": [
+                            "a",
+                            {"donkey_see_donkey_do": None, "type": "key", "key": SpecialKey.ALT.value},
+                        ],
+                    },
                 ]
             )
         )
 
-        assert len(subject) == 5
+        assert len(subject) == 6
         assert subject[0] == events.StateSnapshotEvent(
             timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"), screenshot=Path("."), location=Point(1, 1)
         )
@@ -665,3 +802,6 @@ class TestEvents:
             button=MouseButton.LEFT,
             location=Point(1, 1),
         )
+        event6 = events.WriteEvent(timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"))
+        event6.keys.extend(["a", SpecialKey.ALT])
+        assert subject[5] == event6
