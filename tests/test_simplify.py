@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 
+import pytest
 from pin_the_tail.interaction import MouseButton, SpecialKey
 from pin_the_tail.location import Point
 
@@ -325,6 +326,313 @@ class TestMousePressReleaseToClick:
         )
         assert release_event == events.MouseButtonEvent(
             action="release",
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),
+        )
+
+
+class TestConvertMouseClicksToMultiClicks:
+    @staticmethod
+    def test_no_clicks_returns_unaltered_events():
+        subject = events.Events.from_iterable(
+            (
+                events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+                events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+                events.KeyboardEvent(action="press", key=SpecialKey.ALT),
+                events.MouseButtonEvent(action="press", button=MouseButton.LEFT, location=Point(1, 1)),
+            )
+        )
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject)
+
+        assert actual_events == subject
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "first_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 0),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 0)
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "second_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 1),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 1)
+            ),
+        ],
+    )
+    def test_two_sequential_clicks_converted_to_single_multi_click(first_click, second_click):
+        subject = events.Events.from_iterable((first_click, second_click))
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject)
+
+        assert len(actual_events) == 1
+        assert actual_events[0] == events.ClickEvent(
+            button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 0), n_clicks=2
+        )
+
+    @staticmethod
+    def test_n_clicks_is_sum_of_original_clicks():
+        subject = events.Events.from_iterable(
+            (
+                events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1), n_clicks=2),
+                events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1), n_clicks=7),
+            )
+        )
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject)
+
+        assert len(actual_events) == 1
+        assert actual_events[0].n_clicks == 9
+
+    @staticmethod
+    def test_many_click_events_converted_to_one_multi_click_event():
+        subject = events.Events.from_iterable(
+            (
+                events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1), n_clicks=2),
+                events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1), n_clicks=7),
+                events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
+                events.MouseButtonEvent(
+                    action="click",
+                    button=MouseButton.LEFT,
+                    location=Point(1, 1),
+                ),
+            )
+        )
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject)
+
+        assert len(actual_events) == 1
+        assert actual_events[0].n_clicks == 11
+        assert actual_events[0].timestamp == subject[0].timestamp
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "first_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 0),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 0)
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "second_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.RIGHT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 1),
+            ),
+            events.ClickEvent(
+                button=MouseButton.RIGHT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 1)
+            ),
+        ],
+    )
+    def test_clicks_of_different_buttons_not_merged(first_click, second_click):
+        subject = events.Events.from_iterable((first_click, second_click))
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject)
+
+        assert len(actual_events) == 2
+        assert actual_events == subject
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "first_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 0),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 0)
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "second_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 2),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 2)
+            ),
+        ],
+    )
+    def test_two_clicks_separated_by_non_mergeable_event_not_converted_to_multi_click(first_click, second_click):
+        subject = events.Events.from_iterable(
+            (
+                first_click,
+                events.ClickEvent(
+                    button=MouseButton.RIGHT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 1)
+                ),
+                second_click,
+            )
+        )
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject)
+
+        assert len(actual_events) == 3
+        assert actual_events == subject
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "first_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 0),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 0)
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "second_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 50, 0),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 50, 0)
+            ),
+        ],
+    )
+    def test_two_clicks_are_not_converted_to_multi_click_if_separated_by_too_much_time(first_click, second_click):
+        subject = events.Events.from_iterable((first_click, second_click))
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject, max_seconds=1)
+
+        assert len(actual_events) == 2
+        assert actual_events == subject
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "first_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 1),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 0),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 0)
+            ),
+        ],
+    )
+    @pytest.mark.parametrize(
+        "second_click",
+        [
+            events.MouseButtonEvent(
+                action="click",
+                button=MouseButton.LEFT,
+                location=Point(1, 100),
+                timestamp=datetime(2023, 5, 20, 7, 11, 48, 1),
+            ),
+            events.ClickEvent(
+                button=MouseButton.LEFT, location=Point(1, 100), timestamp=datetime(2023, 5, 20, 7, 11, 48, 1)
+            ),
+        ],
+    )
+    def test_two_clicks_are_not_converted_to_multi_click_if_mouse_moved_too_much(first_click, second_click):
+        subject = events.Events.from_iterable((first_click, second_click))
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject, max_pixels=1)
+
+        assert len(actual_events) == 2
+        assert actual_events == subject
+
+    @staticmethod
+    def test_original_events_are_unmodified_when_events_are_mouse_button():
+        click_1 = events.MouseButtonEvent(
+            action="click",
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 48, 374094),
+        )
+        click_2 = events.MouseButtonEvent(
+            action="click",
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),
+        )
+
+        subject = events.Events.from_iterable([click_1, click_2])
+
+        simplify.convert_mouse_press_then_release_to_click(subject)
+
+        assert click_1 == events.MouseButtonEvent(
+            action="click",
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 48, 374094),
+        )
+        assert click_2 == events.MouseButtonEvent(
+            action="click",
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),
+        )
+
+    @staticmethod
+    def test_original_events_are_unmodified_when_events_are_click():
+        click_1 = events.ClickEvent(
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 48, 374094),
+        )
+        click_2 = events.ClickEvent(
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),
+        )
+
+        subject = events.Events.from_iterable([click_1, click_2])
+
+        simplify.convert_mouse_press_then_release_to_click(subject)
+
+        assert click_1 == events.ClickEvent(
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 48, 374094),
+        )
+        assert click_2 == events.ClickEvent(
             button=MouseButton.LEFT,
             location=Point(1, 1),
             timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),

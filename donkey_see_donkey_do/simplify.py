@@ -40,3 +40,40 @@ def convert_mouse_press_then_release_to_click(events: Events, max_seconds: float
             new_events.append(event)
 
     return Events.from_iterable(new_events)
+
+
+def convert_mouse_clicks_to_multi_click(events: Events, max_seconds: float = 0.4, max_pixels: int = 5) -> Events:
+    """
+    Convert sequential clicks of the same mouse button to a multi-click (e.g. double-click), as long as the subsequent
+    click is at most ``max_seconds`` after the previous and the distance the mouse moved is no more than ``max_pixels``.
+
+    The distance for mouse movement is computed using Euclidean distance.
+    """
+    reversed_saved_events = []
+    for event in reversed(events):
+        if (
+            len(reversed_saved_events) > 0
+            and isinstance(event, (MouseButtonEvent, ClickEvent))
+            and isinstance(reversed_saved_events[-1], (MouseButtonEvent, ClickEvent))
+            and reversed_saved_events[-1].button == event.button
+            and reversed_saved_events[-1].action == "click"
+            and event.action == "click"
+            and (reversed_saved_events[-1].timestamp - event.timestamp).total_seconds() <= max_seconds
+            and (event.location.distance_to(reversed_saved_events[-1].location)) <= max_pixels
+        ):
+            next_event = reversed_saved_events[-1]
+            if not isinstance(next_event, ClickEvent):
+                next_event = ClickEvent.from_mouse_button_event(next_event)
+
+            if not isinstance(event, ClickEvent):
+                event = ClickEvent.from_mouse_button_event(event)
+            else:
+                event = event.copy()
+
+            event.n_clicks += next_event.n_clicks
+
+            reversed_saved_events[-1] = event
+        else:
+            reversed_saved_events.append(event)
+
+    return Events.from_iterable(reversed(reversed_saved_events))
