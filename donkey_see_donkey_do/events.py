@@ -167,11 +167,7 @@ class ClickEvent(MouseButtonEvent):
 
     @classmethod
     def from_mouse_button_event(cls, mouse_button_event: MouseButtonEvent) -> "ClickEvent":
-        """Given a mouse button event where the action='click', create a ClickEvent."""
-        if mouse_button_event.action != "click":
-            raise ValueError(
-                f"Only click MouseButtonEvents can be converted into ClickEvents; received {mouse_button_event!r}"
-            )
+        """Given a mouse button event, create a ClickEvent."""
         return ClickEvent(
             timestamp=mouse_button_event.timestamp,
             screenshot=mouse_button_event.screenshot,

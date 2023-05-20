@@ -305,21 +305,17 @@ class TestClickEvent:
         assert subject.n_clicks == value
 
     @staticmethod
-    def test_creating_click_event_from_mouse_button_click_event_uses_all_fields():
-        button_event = events.MouseButtonEvent(button=MouseButton.LEFT, location=Point(1, 2), action="click")
+    @pytest.mark.parametrize("action", ["click", "press", "release"])
+    def test_creating_click_event_from_mouse_button_click_event_uses_all_fields(action):
+        button_event = events.MouseButtonEvent(button=MouseButton.LEFT, location=Point(1, 2), action=action)
 
         subject = events.ClickEvent.from_mouse_button_event(button_event)
 
         for field in events.MouseButtonEvent.__fields__:
-            assert getattr(button_event, field) == getattr(subject, field)
-
-    @staticmethod
-    @pytest.mark.parametrize("action", ["press", "release"])
-    def test_creating_click_event_from_mouse_button_event_where_action_not_click_raises_value_error(action):
-        button_event = events.MouseButtonEvent(button=MouseButton.LEFT, location=Point(1, 2), action=action)
-
-        with pytest.raises(ValueError):
-            events.ClickEvent.from_mouse_button_event(button_event)
+            if field != "action":
+                assert getattr(button_event, field) == getattr(subject, field)
+            else:
+                assert subject.action == "click"
 
     @staticmethod
     def test_event_serializes():
