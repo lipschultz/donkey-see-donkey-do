@@ -227,6 +227,7 @@ class WriteEvent(BaseEvent):
     device: Literal["keyboard"] = "keyboard"
     action: Literal["write"] = "write"
     keys: KeysToPress = Field(default_factory=KeysToPress)
+    last_timestamp: Optional[datetime] = None
 
     @classmethod
     def from_keyboard_event(cls, keyboard_event: KeyboardEvent) -> "WriteEvent":

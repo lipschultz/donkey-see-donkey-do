@@ -551,6 +551,7 @@ class TestWriteEvent:
         assert subject.action == "write"
         assert len(subject.keys) == 1
         assert subject.keys[0] == character
+        assert subject.last_timestamp is None
 
     @staticmethod
     @pytest.mark.parametrize("key", [SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
@@ -562,6 +563,7 @@ class TestWriteEvent:
         assert subject.action == "write"
         assert len(subject.keys) == 1
         assert subject.keys[0] == key
+        assert subject.last_timestamp is None
 
     @staticmethod
     @pytest.mark.parametrize("action", ["press", "release"])
@@ -586,6 +588,7 @@ class TestWriteEvent:
 
         assert len(subject.keys) == 1
         assert subject.keys[0] == key
+        assert subject.last_timestamp is None
 
     @staticmethod
     @pytest.mark.parametrize("key1", ["a", "\t", " ", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
@@ -597,12 +600,15 @@ class TestWriteEvent:
         assert len(subject.keys) == 2
         assert subject.keys[0] == key1
         assert subject.keys[1] == key2
+        assert subject.last_timestamp is None
 
     @staticmethod
-    @pytest.mark.parametrize("key1", ["a", "\t", " ", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
-    @pytest.mark.parametrize("key2", ["a", "\t", " ", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
-    def test_event_serializes(key1, key2):
+    @pytest.mark.parametrize("key1", ["a", "\t", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("key2", ["a", "\t", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("last_timestamp", [None, datetime.now()])
+    def test_event_serializes(key1, key2, last_timestamp):
         subject = events.WriteEvent.from_raw_key([key1, key2])
+        subject.last_timestamp = last_timestamp
 
         actual = subject.json()
 
@@ -616,13 +622,15 @@ class TestWriteEvent:
                     key1 if isinstance(key1, str) else {"donkey_see_donkey_do": None, "type": "key", "key": key1.value},
                     key2 if isinstance(key2, str) else {"donkey_see_donkey_do": None, "type": "key", "key": key2.value},
                 ],
+                "last_timestamp": last_timestamp if last_timestamp is None else last_timestamp.isoformat(),
             },
         )
 
     @staticmethod
-    @pytest.mark.parametrize("key1", ["a", "\t", " ", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
-    @pytest.mark.parametrize("key2", ["a", "\t", " ", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
-    def test_deserialize_event(key1, key2):
+    @pytest.mark.parametrize("key1", ["a", "\t", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("key2", ["a", "\t", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
+    @pytest.mark.parametrize("last_timestamp", [None, datetime.now()])
+    def test_deserialize_event(key1, key2, last_timestamp):
         if isinstance(key1, str):
             json_key1_field = key1
         else:
@@ -641,11 +649,14 @@ class TestWriteEvent:
                     "device": "keyboard",
                     "action": "write",
                     "keys": [json_key1_field, json_key2_field],
+                    "last_timestamp": last_timestamp if last_timestamp is None else last_timestamp.isoformat(),
                 }
             )
         )
 
-        expected = events.WriteEvent(timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"))
+        expected = events.WriteEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"), last_timestamp=last_timestamp
+        )
         expected.keys.extend([key1, key2])
         assert subject == expected
 
@@ -787,6 +798,7 @@ class TestEvents:
                     "a",
                     {"donkey_see_donkey_do": None, "type": "key", "key": SpecialKey.ALT.value},
                 ],
+                "last_timestamp": None,
             },
         ]
 
@@ -845,6 +857,7 @@ class TestEvents:
                             "a",
                             {"donkey_see_donkey_do": None, "type": "key", "key": SpecialKey.ALT.value},
                         ],
+                        "last_timestamp": None,
                     },
                 ]
             )
