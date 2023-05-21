@@ -107,3 +107,25 @@ def convert_key_press_then_release_to_write(events: Events, max_seconds: float =
             new_events.append(event)
 
     return Events.from_iterable(new_events)
+
+
+def merge_consecutive_write_events(events: Events, max_seconds: float = 1) -> Events:
+    """
+    Merge consecutive write events that are no more than ``max_seconds`` apart.
+    """
+    reversed_saved_events = []
+    for event in reversed(events):
+        if (
+            len(reversed_saved_events) > 0
+            and isinstance(event, WriteEvent)
+            and isinstance(reversed_saved_events[-1], WriteEvent)
+            and (reversed_saved_events[-1].timestamp - event.last_timestamp_or_first).total_seconds() <= max_seconds
+        ):
+            next_event = reversed_saved_events[-1]
+            event = event.copy(deep=True)
+            event.append(next_event)
+            reversed_saved_events[-1] = event
+        else:
+            reversed_saved_events.append(event)
+
+    return Events.from_iterable(reversed(reversed_saved_events))

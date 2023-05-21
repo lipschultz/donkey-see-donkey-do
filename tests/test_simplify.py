@@ -425,6 +425,7 @@ class TestConvertMouseClicksToMultiClicks:
         assert len(actual_events) == 1
         assert actual_events[0].n_clicks == 11
         assert actual_events[0].timestamp == subject[0].timestamp
+        assert actual_events[0].last_timestamp == subject[-1].timestamp
 
     @staticmethod
     def test_clicks_merged_when_first_and_last_are_separated_by_more_than_max_seconds():
@@ -450,6 +451,7 @@ class TestConvertMouseClicksToMultiClicks:
         assert len(actual_events) == 1
         assert actual_events[0].n_clicks == 4
         assert actual_events[0].timestamp == subject[0].timestamp
+        assert actual_events[0].last_timestamp == subject[-1].timestamp
 
     @staticmethod
     def test_clicks_merged_when_second_starts_too_long_after_first_started_but_soon_enough_after_first_ended():
@@ -834,3 +836,145 @@ class TestConvertKeyPressReleaseToWrite:
             key="a",
             timestamp=datetime(2023, 5, 20, 7, 11, 49, 0),
         )
+
+
+class TestMergeConsecutiveWriteEvents:
+    @staticmethod
+    def test_no_write_returns_unaltered_events():
+        subject = events.Events.from_iterable(
+            (
+                events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1)),
+                events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
+                events.KeyboardEvent(action="press", key="a"),
+                events.KeyboardEvent(action="release", key="a"),
+                events.MouseButtonEvent(action="press", button=MouseButton.LEFT, location=Point(1, 1)),
+            )
+        )
+
+        actual_events = simplify.merge_consecutive_write_events(subject)
+
+        assert actual_events == subject
+
+    @staticmethod
+    def test_two_sequential_writes_converted_to_single_write():
+        first_write = events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 11, 48, 0), keys=["a", SpecialKey.ALT])
+        second_write = events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 11, 48, 1), keys=["b"])
+        subject = events.Events.from_iterable((first_write, second_write))
+
+        actual_events = simplify.merge_consecutive_write_events(subject)
+
+        assert len(actual_events) == 1
+        assert actual_events[0] == events.WriteEvent(
+            timestamp=datetime(2023, 5, 20, 7, 11, 48, 0),
+            last_timestamp=datetime(2023, 5, 20, 7, 11, 48, 1),
+            keys=["a", SpecialKey.ALT, "b"],
+        )
+
+    @staticmethod
+    def test_many_write_events_converted_to_one_write_event():
+        subject = events.Events.from_iterable(
+            (
+                events.WriteEvent(keys="a", timestamp=datetime(2023, 5, 20, 7, 11, 48, 0)),
+                events.WriteEvent(keys=SpecialKey.ALT, timestamp=datetime(2023, 5, 20, 7, 11, 48, 1)),
+                events.WriteEvent(
+                    keys=["b", "c", "d", SpecialKey.LEFT],
+                    timestamp=datetime(2023, 5, 20, 7, 11, 48, 2),
+                    last_timestamp=datetime(2023, 5, 20, 7, 11, 48, 3),
+                ),
+            )
+        )
+
+        actual_events = simplify.merge_consecutive_write_events(subject)
+
+        assert len(actual_events) == 1
+        assert actual_events[0].keys == ["a", SpecialKey.ALT, "b", "c", "d", SpecialKey.LEFT]
+        assert actual_events[0].timestamp == subject[0].timestamp
+        assert actual_events[0].last_timestamp == subject[-1].last_timestamp
+
+    @staticmethod
+    def test_writes_merged_when_first_and_last_are_separated_by_more_than_max_seconds():
+        subject = events.Events.from_iterable(
+            (
+                events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 1, 0), keys="a"),
+                events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 1, 2), keys="b"),
+                events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 1, 4), keys="c"),
+                events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 1, 6), keys="d"),
+            )
+        )
+
+        actual_events = simplify.merge_consecutive_write_events(subject, max_seconds=3)
+
+        assert len(actual_events) == 1
+        assert actual_events[0].keys == ["a", "b", "c", "d"]
+        assert actual_events[0].timestamp == subject[0].timestamp
+        assert actual_events[0].last_timestamp == subject[-1].timestamp
+
+    @staticmethod
+    def test_writes_merged_when_second_starts_too_long_after_first_started_but_soon_enough_after_first_ended():
+        subject = events.Events.from_iterable(
+            (
+                events.WriteEvent(
+                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 0),
+                    keys=["a", "b"],
+                    last_timestamp=datetime(2023, 5, 20, 7, 1, 3, 0),
+                ),
+                events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 1, 5, 0), keys="c"),
+            )
+        )
+
+        actual_events = simplify.merge_consecutive_write_events(subject, max_seconds=2.1)
+
+        assert len(actual_events) == 1
+        assert actual_events[0].keys == ["a", "b", "c"]
+        assert actual_events[0].timestamp == subject[0].timestamp
+        assert actual_events[0].last_timestamp == subject[-1].timestamp
+
+    @staticmethod
+    def test_two_writes_separated_by_non_mergeable_event_not_merged():
+        subject = events.Events.from_iterable(
+            (
+                events.WriteEvent(keys=["a", "b"]),
+                events.KeyboardEvent(action="press", key="c"),
+                events.WriteEvent(keys="d"),
+            )
+        )
+
+        actual_events = simplify.merge_consecutive_write_events(subject)
+
+        assert len(actual_events) == 3
+        assert actual_events == subject
+
+    @staticmethod
+    def test_two_writes_are_not_merged_if_separated_by_too_much_time():
+        subject = events.Events.from_iterable(
+            (
+                events.WriteEvent(
+                    timestamp=datetime(2023, 5, 20, 7, 11, 48),
+                    keys=["a", "b"],
+                ),
+                events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 11, 50), keys="c"),
+            )
+        )
+
+        actual_events = simplify.merge_consecutive_write_events(subject, max_seconds=1)
+
+        assert len(actual_events) == 2
+        assert actual_events == subject
+
+    @staticmethod
+    def test_original_events_are_unmodified():
+        event1 = events.WriteEvent(
+            timestamp=datetime(2023, 5, 20, 7, 11, 48),
+            keys=["a", "b"],
+        )
+        event2 = events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 11, 49), keys="c")
+
+        subject = events.Events.from_iterable([event1, event2])
+
+        simplify.merge_consecutive_write_events(subject)
+
+        assert event1 == events.WriteEvent(
+            timestamp=datetime(2023, 5, 20, 7, 11, 48),
+            keys=["a", "b"],
+        )
+        assert event2 == events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 11, 49), keys="c")

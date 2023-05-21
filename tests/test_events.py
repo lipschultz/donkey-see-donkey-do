@@ -9,7 +9,7 @@ import pytest
 from freezegun import freeze_time
 from hypothesis import given, strategies
 from PIL import Image, ImageChops
-from pin_the_tail.interaction import MouseButton, SpecialKey
+from pin_the_tail.interaction import KeysToPress, MouseButton, SpecialKey
 from pin_the_tail.location import Point
 from pydantic import ValidationError
 from pynput import mouse
@@ -603,7 +603,7 @@ class TestWriteEvent:
     @staticmethod
     @pytest.mark.parametrize("key", ["a", "\t", " ", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
     def test_creating_write_event_from_key(key):
-        subject = events.WriteEvent.from_raw_key(key)
+        subject = events.WriteEvent(keys=key)
 
         assert len(subject.keys) == 1
         assert subject.keys[0] == key
@@ -614,12 +614,30 @@ class TestWriteEvent:
     @pytest.mark.parametrize("key2", ["a", "\t", " ", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
     @pytest.mark.parametrize("iterable_type", [list, tuple, iter])
     def test_creating_write_event_from_keys(key1, key2, iterable_type):
-        subject = events.WriteEvent.from_raw_key(iterable_type([key1, key2]))
+        subject = events.WriteEvent(keys=iterable_type([key1, key2]))
 
         assert len(subject.keys) == 2
         assert subject.keys[0] == key1
         assert subject.keys[1] == key2
         assert subject.last_timestamp is None
+
+    @staticmethod
+    @pytest.mark.parametrize("key", ["a", SpecialKey.ALT])
+    def test_create_write_event_where_keys_is_str_or_specialkey(key):
+        subject = events.WriteEvent(keys=key)
+
+        assert len(subject.keys) == 1
+        assert isinstance(subject.keys, KeysToPress)
+        assert subject.keys[0] == key
+
+    @staticmethod
+    @pytest.mark.parametrize("iterable_type", [list, tuple, iter])
+    def test_create_write_event_where_keys_is_iterable(iterable_type):
+        subject = events.WriteEvent(keys=iterable_type(["a", SpecialKey.ALT]))
+
+        assert len(subject.keys) == 2
+        assert isinstance(subject.keys, KeysToPress)
+        assert subject.keys == ["a", SpecialKey.ALT]
 
     @staticmethod
     def test_last_timestamp_or_first_returns_last_timestamp_when_not_none():
@@ -640,7 +658,7 @@ class TestWriteEvent:
     @pytest.mark.parametrize("key2", ["a", "\t", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])
     @pytest.mark.parametrize("last_timestamp", [None, datetime.now()])
     def test_event_serializes(key1, key2, last_timestamp):
-        subject = events.WriteEvent.from_raw_key([key1, key2])
+        subject = events.WriteEvent(keys=[key1, key2])
         subject.last_timestamp = last_timestamp
 
         actual = subject.json()
@@ -693,6 +711,56 @@ class TestWriteEvent:
         expected.keys.extend([key1, key2])
         assert subject == expected
 
+    @staticmethod
+    def test_updating_with_second_write_and_no_last_timestamp():
+        first_timestamp = datetime(2023, 4, 28, 7, 49, 12)
+        second_timestamp = datetime(2023, 4, 28, 7, 49, 13)
+        first_click = events.WriteEvent(timestamp=first_timestamp, keys="a")
+        second_click = events.WriteEvent(timestamp=second_timestamp, keys="b")
+
+        first_click.append(second_click)
+
+        assert first_click == events.WriteEvent(
+            timestamp=first_timestamp,
+            screenshot=None,
+            keys=["a", "b"],
+            last_timestamp=second_timestamp,
+        )
+
+    @staticmethod
+    def test_updating_where_second_write_occurred_before_first_write():
+        earlier_timestamp = datetime(2023, 4, 28, 7, 49, 12)
+        later_timestamp = datetime(2023, 4, 28, 7, 49, 13)
+        first_write = events.WriteEvent(timestamp=later_timestamp, keys="a")
+        second_write = events.WriteEvent(timestamp=earlier_timestamp, keys="b")
+
+        first_write.append(second_write)
+
+        assert first_write == events.WriteEvent(
+            timestamp=earlier_timestamp,
+            screenshot=None,
+            keys=["a", "b"],
+            last_timestamp=later_timestamp,
+        )
+
+    @staticmethod
+    def test_updating_where_second_write_starts_and_ends_within_first_write():
+        timestamp_1 = datetime(2023, 4, 28, 7, 49, 12)
+        timestamp_2 = datetime(2023, 4, 28, 7, 49, 13)
+        timestamp_3 = datetime(2023, 4, 28, 7, 49, 14)
+        timestamp_4 = datetime(2023, 4, 28, 7, 49, 15)
+        first_event = events.WriteEvent(timestamp=timestamp_1, keys=["a", "b"], last_timestamp=timestamp_4)
+        second_event = events.WriteEvent(timestamp=timestamp_2, keys=["c", "d"], last_timestamp=timestamp_3)
+
+        first_event.append(second_event)
+
+        assert first_event == events.WriteEvent(
+            timestamp=timestamp_1,
+            screenshot=None,
+            keys=["a", "b", "c", "d"],
+            last_timestamp=timestamp_4,
+        )
+
 
 class TestEvents:
     @staticmethod
@@ -702,7 +770,7 @@ class TestEvents:
         event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
         event4 = events.KeyboardEvent(action="press", key="a")
         event5 = events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1))
-        event6 = events.WriteEvent.from_raw_key(["a", SpecialKey.ALT])
+        event6 = events.WriteEvent(keys=["a", SpecialKey.ALT])
 
         all_events = events.Events()
         all_events.append(event1)
@@ -721,7 +789,7 @@ class TestEvents:
         event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
         event4 = events.KeyboardEvent(action="press", key="a")
         event5 = events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1))
-        event6 = events.WriteEvent.from_raw_key(["a", SpecialKey.ALT])
+        event6 = events.WriteEvent(keys=["a", SpecialKey.ALT])
 
         all_events = events.Events()
         all_events.append(event1)
@@ -741,7 +809,7 @@ class TestEvents:
             events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
             events.KeyboardEvent(action="press", key="a"),
             events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
-            events.WriteEvent.from_raw_key(["a", SpecialKey.ALT]),
+            events.WriteEvent(keys=["a", SpecialKey.ALT]),
         ]
 
         subject = events.Events()
@@ -760,7 +828,7 @@ class TestEvents:
             events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5)),
             events.KeyboardEvent(action="press", key="a"),
             events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1)),
-            events.WriteEvent.from_raw_key(["a", SpecialKey.ALT]),
+            events.WriteEvent(keys=["a", SpecialKey.ALT]),
         ]
 
         subject = events.Events.from_iterable(iterable_type(event_collection))
@@ -780,7 +848,7 @@ class TestEvents:
             n_clicks=2,
             last_timestamp=datetime.fromisoformat("2023-05-01T10:26:53.000000"),
         )
-        event6 = events.WriteEvent.from_raw_key(["a", SpecialKey.ALT])
+        event6 = events.WriteEvent(keys=["a", SpecialKey.ALT])
 
         subject = events.Events()
         subject.append(event1)

@@ -234,6 +234,16 @@ class WriteEvent(BaseEvent):
     keys: KeysToPress = Field(default_factory=KeysToPress)
     last_timestamp: Optional[datetime] = None
 
+    @pydantic.validator("keys", pre=True)
+    def convert_keys_to_keystopress(cls, value: Union[KeysToPress, KeyType, Iterable[KeyType]]) -> KeysToPress:
+        if isinstance(value, (str, SpecialKey)):
+            value = [value]
+
+        if not isinstance(value, KeysToPress):
+            value = KeysToPress(value)
+
+        return value
+
     @classmethod
     def from_keyboard_event(cls, keyboard_event: KeyboardEvent) -> "WriteEvent":
         """Given a KeyboardEvent, return a WriteEvent with the same timestamp and key."""
@@ -263,6 +273,25 @@ class WriteEvent(BaseEvent):
                 list(key) if isinstance(key, str) else [key.pyautogui_key] for key in self.keys
             )
         )
+
+    def append(self, other_event: "WriteEvent") -> None:
+        """
+        Append ``other_event``'s keys onto the end of the current event's keys.  Additionally, update the timestamps
+        based on ``other_event``'s timestamps:
+        - ``timestamp`` = ``min(self.timestamp, other_event.timestamp)``
+        - ``last_timestamp`` = ``max(self.last_timestamp, other_event.timestamp, other_event.last_timestamp)``
+        """
+        self.keys.extend(other_event.keys)
+        new_timestamp = min(self.timestamp, other_event.timestamp)
+
+        options_for_last_timestamp = [self.timestamp, other_event.timestamp]
+        if self.last_timestamp is not None:
+            options_for_last_timestamp.append(self.last_timestamp)
+        if other_event.last_timestamp is not None:
+            options_for_last_timestamp.append(other_event.last_timestamp)
+
+        self.last_timestamp = max(options_for_last_timestamp)
+        self.timestamp = new_timestamp
 
 
 RealEventType = Union[StateSnapshotEvent, ClickEvent, MouseButtonEvent, ScrollEvent, KeyboardEvent, WriteEvent]
