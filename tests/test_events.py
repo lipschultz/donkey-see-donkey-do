@@ -420,6 +420,25 @@ class TestClickEvent:
             last_timestamp=timestamp_4,
         )
 
+    @staticmethod
+    def test_last_timestamp_or_first_returns_last_timestamp_when_not_none():
+        subject = events.ClickEvent(
+            timestamp=datetime(2023, 4, 28, 7, 49, 12),
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            last_timestamp=datetime(2023, 4, 28, 7, 49, 13),
+        )
+
+        assert subject.last_timestamp_or_first == datetime(2023, 4, 28, 7, 49, 13)
+
+    @staticmethod
+    def test_last_timestamp_or_first_returns_timestamp_when_last_timestamp_is_none():
+        subject = events.ClickEvent(
+            timestamp=datetime(2023, 4, 28, 7, 49, 12), button=MouseButton.LEFT, location=Point(1, 1)
+        )
+
+        assert subject.last_timestamp_or_first == datetime(2023, 4, 28, 7, 49, 12)
+
 
 class TestScrollEvent:
     @staticmethod
@@ -601,6 +620,20 @@ class TestWriteEvent:
         assert subject.keys[0] == key1
         assert subject.keys[1] == key2
         assert subject.last_timestamp is None
+
+    @staticmethod
+    def test_last_timestamp_or_first_returns_last_timestamp_when_not_none():
+        subject = events.WriteEvent(
+            timestamp=datetime(2023, 4, 28, 7, 49, 12), last_timestamp=datetime(2023, 4, 28, 7, 49, 13)
+        )
+
+        assert subject.last_timestamp_or_first == datetime(2023, 4, 28, 7, 49, 13)
+
+    @staticmethod
+    def test_last_timestamp_or_first_returns_timestamp_when_last_timestamp_is_none():
+        subject = events.WriteEvent(timestamp=datetime(2023, 4, 28, 7, 49, 12))
+
+        assert subject.last_timestamp_or_first == datetime(2023, 4, 28, 7, 49, 12)
 
     @staticmethod
     @pytest.mark.parametrize("key1", ["a", "\t", "\n", SpecialKey.ALT, SpecialKey.MULTIPLY, SpecialKey.OPTION])

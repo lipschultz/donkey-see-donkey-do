@@ -179,6 +179,11 @@ class ClickEvent(MouseButtonEvent):
             button=mouse_button_event.button,
         )
 
+    @property
+    def last_timestamp_or_first(self) -> datetime:
+        """Return ``last_timestamp``, or ``timestamp`` if ``last_timestamp`` is ``None``"""
+        return self.last_timestamp or self.timestamp
+
     def update_with(self, other_event: "ClickEvent") -> None:
         """
         Update the current event's:
@@ -244,6 +249,11 @@ class WriteEvent(BaseEvent):
             key = [key]
         event.keys.extend(key)
         return event
+
+    @property
+    def last_timestamp_or_first(self) -> datetime:
+        """Return ``last_timestamp``, or ``timestamp`` if ``last_timestamp`` is ``None``"""
+        return self.last_timestamp or self.timestamp
 
     @property
     def pyautogui_keys(self) -> List[str]:

@@ -434,18 +434,41 @@ class TestConvertMouseClicksToMultiClicks:
                     timestamp=datetime(2023, 5, 20, 7, 1, 0, 0), button=MouseButton.LEFT, location=Point(1, 1)
                 ),
                 events.ClickEvent(
-                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 2), button=MouseButton.LEFT, location=Point(1, 1)
+                    timestamp=datetime(2023, 5, 20, 7, 1, 2, 0), button=MouseButton.LEFT, location=Point(1, 1)
                 ),
                 events.ClickEvent(
-                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 4), button=MouseButton.LEFT, location=Point(1, 1)
+                    timestamp=datetime(2023, 5, 20, 7, 1, 4, 0), button=MouseButton.LEFT, location=Point(1, 1)
                 ),
                 events.ClickEvent(
-                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 6), button=MouseButton.LEFT, location=Point(1, 1)
+                    timestamp=datetime(2023, 5, 20, 7, 1, 6, 0), button=MouseButton.LEFT, location=Point(1, 1)
                 ),
             )
         )
 
         actual_events = simplify.convert_mouse_clicks_to_multi_click(subject, max_seconds=3)
+
+        assert len(actual_events) == 1
+        assert actual_events[0].n_clicks == 4
+        assert actual_events[0].timestamp == subject[0].timestamp
+
+    @staticmethod
+    def test_clicks_merged_when_second_starts_too_long_after_first_started_but_soon_enough_after_first_ended():
+        subject = events.Events.from_iterable(
+            (
+                events.ClickEvent(
+                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 0),
+                    button=MouseButton.LEFT,
+                    location=Point(1, 1),
+                    n_clicks=3,
+                    last_timestamp=datetime(2023, 5, 20, 7, 1, 3, 0),
+                ),
+                events.ClickEvent(
+                    timestamp=datetime(2023, 5, 20, 7, 1, 5, 0), button=MouseButton.LEFT, location=Point(1, 1)
+                ),
+            )
+        )
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject, max_seconds=2.1)
 
         assert len(actual_events) == 1
         assert actual_events[0].n_clicks == 4

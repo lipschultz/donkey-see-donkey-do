@@ -65,7 +65,7 @@ def convert_mouse_clicks_to_multi_click(events: Events, max_seconds: float = 0.4
             and reversed_saved_events[-1].button == event.button
             and reversed_saved_events[-1].action == "click"
             and event.action == "click"
-            and (reversed_saved_events[-1].timestamp - event.timestamp).total_seconds() <= max_seconds
+            and (reversed_saved_events[-1].timestamp - event.last_timestamp_or_first).total_seconds() <= max_seconds
             and (event.location.distance_to(reversed_saved_events[-1].location)) <= max_pixels
         ):
             next_event = reversed_saved_events[-1]
