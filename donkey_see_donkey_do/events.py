@@ -167,6 +167,7 @@ class MouseButtonEvent(BaseMouseEvent):
 class ClickEvent(MouseButtonEvent):
     action: Literal["click"] = "click"
     n_clicks: PositiveInt = 1
+    last_timestamp: Optional[datetime] = None
 
     @classmethod
     def from_mouse_button_event(cls, mouse_button_event: MouseButtonEvent) -> "ClickEvent":
@@ -177,6 +178,25 @@ class ClickEvent(MouseButtonEvent):
             location=mouse_button_event.location,
             button=mouse_button_event.button,
         )
+
+    def update_with(self, other_event: "ClickEvent") -> None:
+        """
+        Update the current event's:
+        - ``n_clicks`` = ``self.n_clicks`` + ``other_event.n_clicks``
+        - ``timestamp`` = ``min(self.timestamp, other_event.timestamp)``
+        - ``last_timestamp`` = ``max(self.last_timestamp, other_event.timestamp, other_event.last_timestamp)``
+        """
+        self.n_clicks += other_event.n_clicks
+        new_timestamp = min(self.timestamp, other_event.timestamp)
+
+        options_for_last_timestamp = [self.timestamp, other_event.timestamp]
+        if self.last_timestamp is not None:
+            options_for_last_timestamp.append(self.last_timestamp)
+        if other_event.last_timestamp is not None:
+            options_for_last_timestamp.append(other_event.last_timestamp)
+
+        self.last_timestamp = max(options_for_last_timestamp)
+        self.timestamp = new_timestamp
 
 
 class ScrollEvent(BaseMouseEvent):
@@ -251,8 +271,14 @@ class Events(BaseModel):
     def append(self, item: RealEventType) -> None:
         self.__root__.append(item)
 
+    def extend(self, items: Iterable[RealEventType]) -> None:
+        self.__root__.extend(items)
+
     def __getitem__(self, item: int) -> RealEventType:
         return self.__root__[item]
+
+    def __delitem__(self, key):
+        del self.__root__[key]
 
     def __iter__(self):
         return iter(self.__root__)

@@ -384,7 +384,11 @@ class TestConvertMouseClicksToMultiClicks:
 
         assert len(actual_events) == 1
         assert actual_events[0] == events.ClickEvent(
-            button=MouseButton.LEFT, location=Point(1, 1), timestamp=datetime(2023, 5, 20, 7, 11, 48, 0), n_clicks=2
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            timestamp=datetime(2023, 5, 20, 7, 11, 48, 0),
+            n_clicks=2,
+            last_timestamp=datetime(2023, 5, 20, 7, 11, 48, 1),
         )
 
     @staticmethod
@@ -420,6 +424,31 @@ class TestConvertMouseClicksToMultiClicks:
 
         assert len(actual_events) == 1
         assert actual_events[0].n_clicks == 11
+        assert actual_events[0].timestamp == subject[0].timestamp
+
+    @staticmethod
+    def test_clicks_merged_when_first_and_last_are_separated_by_more_than_max_seconds():
+        subject = events.Events.from_iterable(
+            (
+                events.ClickEvent(
+                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 0), button=MouseButton.LEFT, location=Point(1, 1)
+                ),
+                events.ClickEvent(
+                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 2), button=MouseButton.LEFT, location=Point(1, 1)
+                ),
+                events.ClickEvent(
+                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 4), button=MouseButton.LEFT, location=Point(1, 1)
+                ),
+                events.ClickEvent(
+                    timestamp=datetime(2023, 5, 20, 7, 1, 0, 6), button=MouseButton.LEFT, location=Point(1, 1)
+                ),
+            )
+        )
+
+        actual_events = simplify.convert_mouse_clicks_to_multi_click(subject, max_seconds=3)
+
+        assert len(actual_events) == 1
+        assert actual_events[0].n_clicks == 4
         assert actual_events[0].timestamp == subject[0].timestamp
 
     @staticmethod

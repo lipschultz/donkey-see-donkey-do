@@ -77,7 +77,7 @@ def convert_mouse_clicks_to_multi_click(events: Events, max_seconds: float = 0.4
             else:
                 event = event.copy()
 
-            event.n_clicks += next_event.n_clicks
+            event.update_with(next_event)
 
             reversed_saved_events[-1] = event
         else:
@@ -107,6 +107,3 @@ def convert_key_press_then_release_to_write(events: Events, max_seconds: float =
             new_events.append(event)
 
     return Events.from_iterable(new_events)
-
-
-# detect shift + ... -> Uppercase

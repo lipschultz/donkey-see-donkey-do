@@ -332,6 +332,7 @@ class TestClickEvent:
                 "button": "left",
                 "location": {"x": 1, "y": 1},
                 "n_clicks": 1,
+                "last_timestamp": None,
             },
         )
 
@@ -347,6 +348,7 @@ class TestClickEvent:
                     "button": "left",
                     "location": {"x": 1, "y": 1},
                     "n_clicks": 3,
+                    "last_timestamp": None,
                 }
             )
         )
@@ -356,6 +358,66 @@ class TestClickEvent:
             button=MouseButton.LEFT,
             location=Point(1, 1),
             n_clicks=3,
+        )
+
+    @staticmethod
+    def test_updating_with_second_click_and_no_last_timestamp():
+        first_timestamp = datetime(2023, 4, 28, 7, 49, 12)
+        second_timestamp = datetime(2023, 4, 28, 7, 49, 13)
+        first_click = events.ClickEvent(timestamp=first_timestamp, button=MouseButton.LEFT, location=Point(1, 1))
+        second_click = events.ClickEvent(timestamp=second_timestamp, button=MouseButton.LEFT, location=Point(1, 1))
+
+        first_click.update_with(second_click)
+
+        assert first_click == events.ClickEvent(
+            timestamp=first_timestamp,
+            screenshot=None,
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            n_clicks=2,
+            last_timestamp=second_timestamp,
+        )
+
+    @staticmethod
+    def test_updating_where_second_click_occurred_before_first_click():
+        earlier_timestamp = datetime(2023, 4, 28, 7, 49, 12)
+        later_timestamp = datetime(2023, 4, 28, 7, 49, 13)
+        first_click = events.ClickEvent(timestamp=later_timestamp, button=MouseButton.LEFT, location=Point(1, 1))
+        second_click = events.ClickEvent(timestamp=earlier_timestamp, button=MouseButton.LEFT, location=Point(1, 1))
+
+        first_click.update_with(second_click)
+
+        assert first_click == events.ClickEvent(
+            timestamp=earlier_timestamp,
+            screenshot=None,
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            n_clicks=2,
+            last_timestamp=later_timestamp,
+        )
+
+    @staticmethod
+    def test_updating_where_second_click_starts_and_ends_within_first_click():
+        timestamp_1 = datetime(2023, 4, 28, 7, 49, 12)
+        timestamp_2 = datetime(2023, 4, 28, 7, 49, 13)
+        timestamp_3 = datetime(2023, 4, 28, 7, 49, 14)
+        timestamp_4 = datetime(2023, 4, 28, 7, 49, 15)
+        first_click = events.ClickEvent(
+            timestamp=timestamp_1, button=MouseButton.LEFT, location=Point(1, 1), n_clicks=2, last_timestamp=timestamp_4
+        )
+        second_click = events.ClickEvent(
+            timestamp=timestamp_2, button=MouseButton.LEFT, location=Point(1, 1), n_clicks=2, last_timestamp=timestamp_3
+        )
+
+        first_click.update_with(second_click)
+
+        assert first_click == events.ClickEvent(
+            timestamp=timestamp_1,
+            screenshot=None,
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            n_clicks=4,
+            last_timestamp=timestamp_4,
         )
 
 
@@ -668,7 +730,12 @@ class TestEvents:
         event2 = events.MouseButtonEvent(action="release", button=MouseButton.LEFT, location=Point(1, 1))
         event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
         event4 = events.KeyboardEvent(action="press", key=SpecialKey.ALT)
-        event5 = events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1))
+        event5 = events.ClickEvent(
+            button=MouseButton.LEFT,
+            location=Point(1, 1),
+            n_clicks=2,
+            last_timestamp=datetime.fromisoformat("2023-05-01T10:26:53.000000"),
+        )
         event6 = events.WriteEvent.from_raw_key(["a", SpecialKey.ALT])
 
         subject = events.Events()
@@ -709,7 +776,8 @@ class TestEvents:
                 "action": "click",
                 "button": "left",
                 "location": {"x": 1, "y": 1},
-                "n_clicks": 1,
+                "n_clicks": 2,
+                "last_timestamp": "2023-05-01T10:26:53",
             },
             {
                 "screenshot": None,
@@ -765,7 +833,8 @@ class TestEvents:
                         "action": "click",
                         "button": "left",
                         "location": {"x": 1, "y": 1},
-                        "n_clicks": 1,
+                        "n_clicks": 2,
+                        "last_timestamp": "2023-05-01T10:26:53.0",
                     },
                     {
                         "timestamp": "2023-05-01T10:26:52.625731",
@@ -801,6 +870,8 @@ class TestEvents:
             timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
             button=MouseButton.LEFT,
             location=Point(1, 1),
+            n_clicks=2,
+            last_timestamp=datetime.fromisoformat("2023-05-01T10:26:53.000000"),
         )
         event6 = events.WriteEvent(timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"))
         event6.keys.extend(["a", SpecialKey.ALT])
