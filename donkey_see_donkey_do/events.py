@@ -208,6 +208,31 @@ class ScrollEvent(BaseMouseEvent):
     # pylint: disable=too-few-public-methods
     action: Literal["scroll"] = "scroll"
     scroll: PointChange
+    last_timestamp: Optional[datetime] = None
+
+    @property
+    def last_timestamp_or_first(self) -> datetime:
+        """Return ``last_timestamp``, or ``timestamp`` if ``last_timestamp`` is ``None``"""
+        return self.last_timestamp or self.timestamp
+
+    def update_with(self, other_event: "ScrollEvent") -> None:
+        """
+        Update the current event's:
+        - ``scroll`` = ``self.scroll`` + ``other_event.scroll``
+        - ``timestamp`` = ``min(self.timestamp, other_event.timestamp)``
+        - ``last_timestamp`` = ``max(self.last_timestamp, other_event.timestamp, other_event.last_timestamp)``
+        """
+        self.scroll = PointChange(self.scroll.dx + other_event.scroll.dx, self.scroll.dy + other_event.scroll.dy)
+        new_timestamp = min(self.timestamp, other_event.timestamp)
+
+        options_for_last_timestamp = [self.timestamp, other_event.timestamp]
+        if self.last_timestamp is not None:
+            options_for_last_timestamp.append(self.last_timestamp)
+        if other_event.last_timestamp is not None:
+            options_for_last_timestamp.append(other_event.last_timestamp)
+
+        self.last_timestamp = max(options_for_last_timestamp)
+        self.timestamp = new_timestamp
 
 
 class KeyboardEvent(BaseEvent):

@@ -6,7 +6,6 @@ from typing import Union
 import numpy as np
 import pyautogui
 import pytest
-from freezegun import freeze_time
 from hypothesis import given, strategies
 from PIL import Image, ImageChops
 from pin_the_tail.interaction import KeysToPress, MouseButton, SpecialKey
@@ -443,18 +442,25 @@ class TestClickEvent:
 class TestScrollEvent:
     @staticmethod
     def test_event_serializes():
-        subject = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
+        subject = events.ScrollEvent(
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
+            location=Point(1, 1),
+            scroll=(-2, 5),
+            last_timestamp=datetime.fromisoformat("2023-05-01T10:26:54"),
+        )
 
         actual = subject.json()
 
         assert_serialized_objects_equal(
             actual,
             {
+                "timestamp": datetime.fromisoformat("2023-05-01T10:26:52.625731"),
                 "screenshot": None,
                 "device": "mouse",
                 "action": "scroll",
                 "location": {"x": 1, "y": 1},
                 "scroll": {"dx": -2, "dy": 5},
+                "last_timestamp": "2023-05-01T10:26:54",
             },
         )
 
@@ -469,6 +475,7 @@ class TestScrollEvent:
                     "action": "scroll",
                     "location": {"x": 1, "y": 1},
                     "scroll": {"dx": -2, "dy": 5},
+                    "last_timestamp": "2023-05-01T10:26:54",
                 }
             )
         )
@@ -478,20 +485,92 @@ class TestScrollEvent:
             action="scroll",
             location=Point(1, 1),
             scroll=PointChange(-2, 5),
+            last_timestamp=datetime.fromisoformat("2023-05-01T10:26:54"),
         )
 
     @staticmethod
     def test_creating_scroll_event():
-        frozen_time = datetime(2023, 4, 28, 7, 49, 12)
-        with freeze_time(frozen_time):
-            subject = events.ScrollEvent(location=(1, 1), scroll=(5, 7))
+        subject = events.ScrollEvent(timestamp=datetime(2023, 4, 28, 7, 49, 12), location=(1, 1), scroll=(5, 7))
 
         assert subject.device == "mouse"
         assert subject.action == "scroll"
         assert subject.location == Point(1, 1)
         assert subject.scroll == PointChange(5, 7)
-        # freezegun / pydantic interaction bug: https://github.com/spulec/freezegun/issues/480
-        # assert subject.timestamp == frozen_time
+        assert subject.timestamp == datetime(2023, 4, 28, 7, 49, 12)
+
+    @staticmethod
+    def test_last_timestamp_or_first_returns_last_timestamp_when_not_none():
+        subject = events.ScrollEvent(
+            timestamp=datetime(2023, 4, 28, 7, 49, 12),
+            location=Point(1, 1),
+            scroll=(5, 7),
+            last_timestamp=datetime(2023, 4, 28, 7, 49, 13),
+        )
+
+        assert subject.last_timestamp_or_first == datetime(2023, 4, 28, 7, 49, 13)
+
+    @staticmethod
+    def test_last_timestamp_or_first_returns_timestamp_when_last_timestamp_is_none():
+        subject = events.ScrollEvent(timestamp=datetime(2023, 4, 28, 7, 49, 12), scroll=(5, 7), location=Point(1, 1))
+
+        assert subject.last_timestamp_or_first == datetime(2023, 4, 28, 7, 49, 12)
+
+    @staticmethod
+    def test_updating_with_second_scroll_and_no_last_timestamp():
+        first_timestamp = datetime(2023, 4, 28, 7, 49, 12)
+        second_timestamp = datetime(2023, 4, 28, 7, 49, 13)
+        first_scroll = events.ScrollEvent(timestamp=first_timestamp, scroll=(5, 7), location=Point(1, 1))
+        second_scroll = events.ScrollEvent(timestamp=second_timestamp, scroll=(-3, 13), location=Point(1, 1))
+
+        first_scroll.update_with(second_scroll)
+
+        assert first_scroll == events.ScrollEvent(
+            timestamp=first_timestamp,
+            screenshot=None,
+            location=Point(1, 1),
+            scroll=(2, 20),
+            last_timestamp=second_timestamp,
+        )
+
+    @staticmethod
+    def test_updating_where_second_scroll_occurred_before_first_scroll():
+        earlier_timestamp = datetime(2023, 4, 28, 7, 49, 12)
+        later_timestamp = datetime(2023, 4, 28, 7, 49, 13)
+        first_event = events.ScrollEvent(timestamp=later_timestamp, scroll=(5, 7), location=Point(1, 1))
+        second_event = events.ScrollEvent(timestamp=earlier_timestamp, scroll=(-3, 13), location=Point(1, 1))
+
+        first_event.update_with(second_event)
+
+        assert first_event == events.ScrollEvent(
+            timestamp=earlier_timestamp,
+            screenshot=None,
+            location=Point(1, 1),
+            scroll=(2, 20),
+            last_timestamp=later_timestamp,
+        )
+
+    @staticmethod
+    def test_updating_where_second_scroll_starts_and_ends_within_first_scroll():
+        timestamp_1 = datetime(2023, 4, 28, 7, 49, 12)
+        timestamp_2 = datetime(2023, 4, 28, 7, 49, 13)
+        timestamp_3 = datetime(2023, 4, 28, 7, 49, 14)
+        timestamp_4 = datetime(2023, 4, 28, 7, 49, 15)
+        first_event = events.ScrollEvent(
+            timestamp=timestamp_1, scroll=(5, 7), location=Point(1, 1), last_timestamp=timestamp_4
+        )
+        second_event = events.ScrollEvent(
+            timestamp=timestamp_2, scroll=(-3, 13), location=Point(1, 1), last_timestamp=timestamp_3
+        )
+
+        first_event.update_with(second_event)
+
+        assert first_event == events.ScrollEvent(
+            timestamp=timestamp_1,
+            screenshot=None,
+            location=Point(1, 1),
+            scroll=(2, 20),
+            last_timestamp=timestamp_4,
+        )
 
 
 class TestKeyboardEvent:
@@ -840,7 +919,9 @@ class TestEvents:
     def test_events_serializes():
         event1 = events.StateSnapshotEvent(screenshot=Path("."), location=Point(1, 1))
         event2 = events.MouseButtonEvent(action="release", button=MouseButton.LEFT, location=Point(1, 1))
-        event3 = events.ScrollEvent(location=Point(1, 1), scroll=(-2, 5))
+        event3 = events.ScrollEvent(
+            location=Point(1, 1), scroll=(-2, 5), last_timestamp=datetime.fromisoformat("2023-05-01T10:26:53.000000")
+        )
         event4 = events.KeyboardEvent(action="press", key=SpecialKey.ALT)
         event5 = events.ClickEvent(
             button=MouseButton.LEFT,
@@ -875,6 +956,7 @@ class TestEvents:
                 "action": "scroll",
                 "location": {"x": 1, "y": 1},
                 "scroll": {"dx": -2, "dy": 5},
+                "last_timestamp": "2023-05-01T10:26:53",
             },
             {
                 "screenshot": None,
@@ -931,6 +1013,7 @@ class TestEvents:
                         "action": "scroll",
                         "location": {"x": 1, "y": 1},
                         "scroll": {"dx": -2, "dy": 5},
+                        "last_timestamp": "2023-05-01T10:26:53",
                     },
                     {
                         "timestamp": "2023-05-01T10:26:52.625731",
@@ -975,7 +1058,10 @@ class TestEvents:
             location=Point(1, 1),
         )
         assert subject[2] == events.ScrollEvent(
-            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"), location=Point(1, 1), scroll=(-2, 5)
+            timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"),
+            location=Point(1, 1),
+            scroll=(-2, 5),
+            last_timestamp=datetime.fromisoformat("2023-05-01T10:26:53.000000"),
         )
         assert subject[3] == events.KeyboardEvent(
             timestamp=datetime.fromisoformat("2023-05-01T10:26:52.625731"), action="press", key=SpecialKey.ALT
