@@ -1,3 +1,5 @@
+from typing import Callable, List
+
 from donkey_see_donkey_do.events import (
     ClickEvent,
     Events,
@@ -129,3 +131,18 @@ def merge_consecutive_write_events(events: Events, max_seconds: float = 1) -> Ev
             reversed_saved_events.append(event)
 
     return Events.from_iterable(reversed(reversed_saved_events))
+
+
+ALL_SIMPLIFIERS = (
+    drop_consecutive_state_snapshots,
+    convert_mouse_press_then_release_to_click,
+    convert_mouse_clicks_to_multi_click,
+    convert_key_press_then_release_to_write,
+    merge_consecutive_write_events,
+)
+
+
+def run_simplifiers(events: Events, simplifiers: List[Callable[[Events], Events]] = ALL_SIMPLIFIERS) -> Events:
+    for simplifier in simplifiers:
+        events = simplifier(events)
+    return events

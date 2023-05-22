@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Callable, Union
 
 import pyautogui
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -24,6 +24,9 @@ class Recorder:
     def get_events(self) -> Events:
         return self.recorded_events
 
+    def _append_event(self, event):
+        self.recorded_events.append(event)
+
     def _get_screenshot(self) -> Image.Image:
         return pyautogui.screenshot()
 
@@ -34,7 +37,7 @@ class Recorder:
             action="press" if is_press else "release",
             button=button.value,
         )
-        self.recorded_events.append(event)
+        self._append_event(event)
 
     def _on_scroll(self, x: int, y: int, dx, dy):
         event = ScrollEvent(
@@ -42,7 +45,7 @@ class Recorder:
             location=(x, y),
             scroll=(dx, dy),
         )
-        self.recorded_events.append(event)
+        self._append_event(event)
 
     def _on_key_press(self, key):
         event = KeyboardEvent(
@@ -50,7 +53,7 @@ class Recorder:
             key=key,
             action="press",
         )
-        self.recorded_events.append(event)
+        self._append_event(event)
 
     def _on_key_release(self, key):
         event = KeyboardEvent(
@@ -58,14 +61,14 @@ class Recorder:
             key=key,
             action="release",
         )
-        self.recorded_events.append(event)
+        self._append_event(event)
 
     def _take_snapshot(self):
         event = StateSnapshotEvent(
             screenshot=self._get_screenshot(),
             location=pyautogui.position(),
         )
-        self.recorded_events.append(event)
+        self._append_event(event)
 
     def record(self) -> None:
         self._mouse_listener = mouse.Listener(on_click=self._on_click, on_scroll=self._on_scroll)
@@ -87,3 +90,13 @@ class Recorder:
 
         if self._state_snapshot_scheduler is not None:
             self._state_snapshot_scheduler.shutdown()
+
+
+class SimplifyingRecorder(Recorder):
+    def __init__(self, simplifier: Callable[[Events], Events], snapshot_frequency: Union[int, float] = 1):
+        super().__init__(snapshot_frequency=snapshot_frequency)
+        self.simplifier = simplifier
+
+    def _append_event(self, event):
+        super()._append_event(event)
+        self.recorded_events = self.simplifier(self.recorded_events)
