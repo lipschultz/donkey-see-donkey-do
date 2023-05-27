@@ -1,5 +1,6 @@
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from pin_the_tail.interaction import MouseButton, SpecialKey
@@ -978,3 +979,223 @@ class TestMergeConsecutiveWriteEvents:
             keys=["a", "b"],
         )
         assert event2 == events.WriteEvent(timestamp=datetime(2023, 5, 20, 7, 11, 49), keys="c")
+
+
+class TestMergeConsecutiveScrollEvents:
+    @staticmethod
+    @pytest.mark.parametrize(
+        "event1, event2",
+        [
+            (events.ScrollEvent(location=(1, 1), scroll=(1, 0)), events.WriteEvent()),
+            (events.WriteEvent(), events.ScrollEvent(location=(1, 1), scroll=(1, 0))),
+            (events.WriteEvent(), events.WriteEvent()),
+        ],
+    )
+    def test_events_returned_if_at_least_one_isnt_a_scroll_event(event1, event2):
+        actual = simplify.merge_consecutive_scroll_events(event1, event2)
+
+        assert actual == [event1, event2]
+
+    @staticmethod
+    def test_events_unmerged_if_separated_by_too_much_time():
+        event1 = events.ScrollEvent(timestamp=datetime(2023, 5, 20, 7, 11, 48), location=(1, 1), scroll=(1, 0))
+        event2 = events.ScrollEvent(timestamp=datetime(2023, 5, 20, 7, 12, 48), location=(1, 1), scroll=(3, 0))
+
+        actual = simplify.merge_consecutive_scroll_events(event1, event2, max_seconds=1)
+
+        assert actual == [event1, event2]
+
+    @staticmethod
+    def test_events_unmerged_if_last_timestamp_of_first_is_much_earlier_than_timestamp_of_second():
+        event1 = events.ScrollEvent(
+            timestamp=datetime(2023, 5, 20, 7, 11, 48),
+            location=(1, 1),
+            scroll=(1, 0),
+            last_timestamp=datetime(2023, 5, 20, 7, 11, 50),
+        )
+        event2 = events.ScrollEvent(timestamp=datetime(2023, 5, 20, 7, 12, 48), location=(1, 1), scroll=(3, 0))
+
+        actual = simplify.merge_consecutive_scroll_events(event1, event2, max_seconds=2)
+
+        assert actual == [event1, event2]
+
+    @staticmethod
+    def test_events_merge_when_first_starts_much_earlier_but_ends_close_enough_to_start_of_second():
+        event1 = events.ScrollEvent(
+            timestamp=datetime(2023, 5, 20, 7, 11, 48),
+            location=(1, 1),
+            scroll=(1, 0),
+            last_timestamp=datetime(2023, 5, 20, 7, 12, 47),
+        )
+        event2 = events.ScrollEvent(timestamp=datetime(2023, 5, 20, 7, 12, 48), location=(1, 1), scroll=(3, 0))
+        event_merged = event1.copy()
+        event_merged.update_with(event2)
+
+        actual = simplify.merge_consecutive_scroll_events(event1, event2, max_seconds=2)
+
+        assert actual == [event_merged]
+
+    @staticmethod
+    def test_events_unmerged_if_separated_by_too_many_pixels():
+        event1 = events.ScrollEvent(location=(1, 1), scroll=(1, 0))
+        event2 = events.ScrollEvent(location=(1, 20), scroll=(3, 0))
+
+        actual = simplify.merge_consecutive_scroll_events(event1, event2, max_pixels=1)
+
+        assert actual == [event1, event2]
+
+    @staticmethod
+    @pytest.mark.parametrize("dx_1, dx_2", [(0, 0), (0, 1), (1, 0), (1, 1), (0, -1), (-1, 0), (-1, -1)])
+    @pytest.mark.parametrize("dy_1, dy_2", [(0, 0), (0, 1), (1, 0), (1, 1), (0, -1), (-1, 0), (-1, -1)])
+    def test_events_merge_if_scroll_directions_compatible(dx_1, dx_2, dy_1, dy_2):
+        event1 = events.ScrollEvent(location=(1, 1), scroll=(dx_1, dy_1))
+        event2 = events.ScrollEvent(location=(1, 1), scroll=(dx_2, dy_2))
+        event_merged = event1.copy()
+        event_merged.update_with(event2)
+
+        actual = simplify.merge_consecutive_scroll_events(event1, event2)
+
+        assert actual == [event_merged]
+
+    @staticmethod
+    @pytest.mark.parametrize("dx_1, dx_2", [(0, 0), (-1, 1), (1, -1)])
+    @pytest.mark.parametrize("dy_1, dy_2", [(0, 0), (-1, 1), (1, -1)])
+    def test_events_merged_if_merge_opposite_directions_is_true(dx_1, dy_1, dx_2, dy_2):
+        event1 = events.ScrollEvent(location=(1, 1), scroll=(dx_1, dy_1))
+        event2 = events.ScrollEvent(location=(1, 1), scroll=(dx_2, dy_2))
+        event_merged = event1.copy()
+        event_merged.update_with(event2)
+
+        actual = simplify.merge_consecutive_scroll_events(event1, event2, merge_opposite_directions=True)
+
+        assert actual == [event_merged]
+
+    @staticmethod
+    @pytest.mark.parametrize("dx_1, dx_2", [(-1, 1), (1, -1)])
+    @pytest.mark.parametrize("dy_1, dy_2", [(-1, 1), (1, -1)])
+    def test_events_not_merged_if_scrolls_are_in_opposite_directions(dx_1, dy_1, dx_2, dy_2):
+        event1 = events.ScrollEvent(location=(1, 1), scroll=(dx_1, dy_1))
+        event2 = events.ScrollEvent(location=(1, 1), scroll=(dx_2, dy_2))
+
+        actual = simplify.merge_consecutive_scroll_events(event1, event2)
+
+        assert actual == [event1, event2]
+
+
+class TestMergeConsecutiveEvents:
+    @staticmethod
+    def test_empty_events_returns_empty_events():
+        subject = events.Events()
+        mock_merger = MagicMock()
+
+        actual = simplify.merge_consecutive_events(subject, [mock_merger])
+
+        assert actual is subject
+        mock_merger.assert_not_called()
+
+    @staticmethod
+    def test_one_event_returns_that_event():
+        subject = events.Events.from_iterable([MagicMock()])
+        mock_merger = MagicMock()
+
+        actual = simplify.merge_consecutive_events(subject, [mock_merger])
+
+        assert actual is subject
+        mock_merger.assert_not_called()
+
+    @staticmethod
+    def test_no_mergers_returns_events_unmerged():
+        event0 = MagicMock()
+        event1 = MagicMock()
+        event2 = MagicMock()
+        event3 = MagicMock()
+        subject = events.Events.from_iterable([event0, event1, event2, event3])
+
+        actual = simplify.merge_consecutive_events(subject, [])
+
+        assert actual == subject
+
+    @staticmethod
+    def test_two_events_merged_into_one():
+        event0 = events.WriteEvent(keys="a")
+        event1 = events.WriteEvent(keys="b")
+        event_merged01 = events.WriteEvent(keys="ab")
+        subject = events.Events.from_iterable([event0, event1])
+
+        def merger(event_a, event_b):
+            if event_a == event0 and event_b == event1:
+                return [event_merged01]
+            return [event_a, event_b]
+
+        actual = simplify.merge_consecutive_events(subject, [merger])
+
+        assert actual == events.Events.from_iterable([event_merged01])
+
+    @staticmethod
+    def test_two_unmergeable_events_remain_unmerged():
+        event0 = events.WriteEvent(keys="a")
+        event1 = events.WriteEvent(keys="b")
+        subject = events.Events.from_iterable([event0, event1])
+
+        def merger(event_a, event_b):
+            return [event_a, event_b]
+
+        actual = simplify.merge_consecutive_events(subject, [merger])
+
+        assert actual == events.Events.from_iterable([event0, event1])
+
+    @staticmethod
+    def test_merged_event_can_be_merged_with_subsequent_event():
+        event0 = events.WriteEvent(keys="a")
+        event1 = events.WriteEvent(keys="b")
+        event2 = events.WriteEvent(keys="c")
+        event_merged01 = events.WriteEvent(keys="ab")
+        event_merged012 = events.WriteEvent(keys="abc")
+        subject = events.Events.from_iterable([event0, event1, event2])
+
+        def merger(event_a, event_b):
+            if event_a == event0 and event_b == event1:
+                return [event_merged01]
+            if event_a == event_merged01 and event_b == event2:
+                return [event_merged012]
+            return [event_a, event_b]
+
+        actual = simplify.merge_consecutive_events(subject, [merger])
+
+        assert actual == events.Events.from_iterable([event_merged012])
+
+    @staticmethod
+    def test_events_not_merged_if_separated_by_unmergeable_event():
+        event0 = events.WriteEvent(keys="a")
+        event1 = events.WriteEvent(keys="b")
+        event2 = events.WriteEvent(keys="c")
+        event_merged02 = events.WriteEvent(keys="ac")
+        subject = events.Events.from_iterable([event0, event1, event2])
+
+        def merger(event_a, event_b):
+            if event_a == event0 and event_b == event2:
+                return [event_merged02]
+            return [event_a, event_b]
+
+        actual = simplify.merge_consecutive_events(subject, [merger])
+
+        assert actual == events.Events.from_iterable([event0, event1, event2])
+
+    @staticmethod
+    def test_second_merger_called_if_first_merger_doesnt_merge():
+        event0 = events.WriteEvent(keys="a")
+        event1 = events.WriteEvent(keys="b")
+        event_merged01 = events.WriteEvent(keys="ab")
+        subject = events.Events.from_iterable([event0, event1])
+
+        def merger1(event_a, event_b):
+            return [event_a, event_b]
+
+        def merger2(event_a, event_b):
+            if event_a == event0 and event_b == event1:
+                return [event_merged01]
+            return [event_a, event_b]
+
+        actual = simplify.merge_consecutive_events(subject, [merger1, merger2])
+
+        assert actual == events.Events.from_iterable([event_merged01])

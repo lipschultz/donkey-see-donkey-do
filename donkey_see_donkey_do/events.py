@@ -72,6 +72,15 @@ class BaseEvent(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.now)
     screenshot: Optional[Union[Image.Image, Path]] = None
 
+    @property
+    def last_timestamp_or_first(self) -> datetime:
+        """Return ``timestamp``"""
+        return self.timestamp
+
+    @property
+    def duration(self) -> float:
+        return (self.last_timestamp_or_first - self.timestamp).total_seconds()
+
     class Config:
         # pylint: disable=too-few-public-methods
         arbitrary_types_allowed = True
