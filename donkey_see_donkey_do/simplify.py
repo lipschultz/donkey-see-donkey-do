@@ -1,5 +1,5 @@
 import math
-from typing import Callable, Iterable, List
+from typing import Callable, Iterable, List, Tuple
 
 from donkey_see_donkey_do.events import (
     BaseEvent,
@@ -11,6 +11,8 @@ from donkey_see_donkey_do.events import (
     StateSnapshotEvent,
     WriteEvent,
 )
+
+MergeConsecutiveEventCallableType = Callable[[BaseEvent, BaseEvent], List[BaseEvent]]
 
 
 def drop_consecutive_state_snapshots(first_event: BaseEvent, second_event: BaseEvent) -> List[BaseEvent]:
@@ -183,9 +185,17 @@ def merge_consecutive_scroll_events(
     return [first_event, second_event]
 
 
-def merge_consecutive_events(
-    events: Events, event_mergers: Iterable[Callable[[BaseEvent, BaseEvent], List[BaseEvent]]]
-) -> Events:
+ALL_MERGE_CONSECUTIVE_EVENTS: Tuple[MergeConsecutiveEventCallableType, ...] = (
+    drop_consecutive_state_snapshots,
+    merge_consecutive_mouse_press_then_release_to_click,
+    merge_consecutive_mouse_clicks_to_multi_click,
+    merge_consecutive_key_press_then_release_to_write,
+    merge_consecutive_write_events,
+    merge_consecutive_scroll_events,
+)
+
+
+def merge_consecutive_events(events: Events, event_mergers: Iterable[MergeConsecutiveEventCallableType]) -> Events:
     """
     Iterate over the events in ``event``, merging events according to the functions in ``event_mergers``.
 
@@ -214,19 +224,3 @@ def merge_consecutive_events(
         if event is not None:
             final_events.append(event)
     return Events.from_iterable(final_events)
-
-
-ALL_SIMPLIFIERS = (
-    drop_consecutive_state_snapshots,
-    merge_consecutive_mouse_press_then_release_to_click,
-    merge_consecutive_mouse_clicks_to_multi_click,
-    merge_consecutive_key_press_then_release_to_write,
-    merge_consecutive_write_events,
-    merge_consecutive_scroll_events,
-)
-
-
-def run_simplifiers(events: Events, simplifiers: List[Callable[[Events], Events]] = ALL_SIMPLIFIERS) -> Events:
-    for simplifier in simplifiers:
-        events = simplifier(events)
-    return events
