@@ -13,29 +13,11 @@ from donkey_see_donkey_do.events import (
 )
 
 
-def drop_consecutive_state_snapshots(events: Events) -> Events:
-    return merge_consecutive_events(
-        events,
-        [drop_consecutive_state_snapshots_1],
-    )
-
-
-def drop_consecutive_state_snapshots_1(first_event: BaseEvent, second_event: BaseEvent) -> List[BaseEvent]:
+def drop_consecutive_state_snapshots(first_event: BaseEvent, second_event: BaseEvent) -> List[BaseEvent]:
     """If both events are snapshot events, keep only the second, otherwise return both."""
     if isinstance(first_event, StateSnapshotEvent) and isinstance(second_event, StateSnapshotEvent):
         return [second_event]
     return [first_event, second_event]
-
-
-def convert_mouse_press_then_release_to_click(events: Events, max_seconds: float = 0.2, max_pixels: int = 5) -> Events:
-    return merge_consecutive_events(
-        events,
-        [
-            lambda e1, e2: merge_consecutive_mouse_press_then_release_to_click(
-                e1, e2, max_seconds=max_seconds, max_pixels=max_pixels
-            )
-        ],
-    )
 
 
 def merge_consecutive_mouse_press_then_release_to_click(
@@ -64,17 +46,6 @@ def merge_consecutive_mouse_press_then_release_to_click(
         return [first_event, second_event]
 
     return [ClickEvent.from_mouse_button_event(first_event)]
-
-
-def convert_mouse_clicks_to_multi_click(events: Events, max_seconds: float = 0.4, max_pixels: int = 5) -> Events:
-    return merge_consecutive_events(
-        events,
-        [
-            lambda e1, e2: merge_consecutive_mouse_clicks_to_multi_click(
-                e1, e2, max_seconds=max_seconds, max_pixels=max_pixels
-            )
-        ],
-    )
 
 
 def merge_consecutive_mouse_clicks_to_multi_click(
@@ -114,12 +85,6 @@ def merge_consecutive_mouse_clicks_to_multi_click(
     return [first_event]
 
 
-def convert_key_press_then_release_to_write(events: Events, max_seconds: float = 0.15) -> Events:
-    return merge_consecutive_events(
-        events, [lambda e1, e2: merge_consecutive_key_press_then_release_to_write(e1, e2, max_seconds=max_seconds)]
-    )
-
-
 def merge_consecutive_key_press_then_release_to_write(
     first_event: BaseEvent, second_event: BaseEvent, max_seconds: float = 0.15
 ) -> List[BaseEvent]:
@@ -145,13 +110,7 @@ def merge_consecutive_key_press_then_release_to_write(
     return [WriteEvent.from_keyboard_event(first_event)]
 
 
-def merge_consecutive_write_events(events: Events, max_seconds: float = 1) -> Events:
-    return merge_consecutive_events(
-        events, [lambda e1, e2: merge_consecutive_write_events_1(e1, e2, max_seconds=max_seconds)]
-    )
-
-
-def merge_consecutive_write_events_1(
+def merge_consecutive_write_events(
     first_event: BaseEvent, second_event: BaseEvent, max_seconds: float = 1
 ) -> List[BaseEvent]:
     """
@@ -259,9 +218,9 @@ def merge_consecutive_events(
 
 ALL_SIMPLIFIERS = (
     drop_consecutive_state_snapshots,
-    convert_mouse_press_then_release_to_click,
-    convert_mouse_clicks_to_multi_click,
-    convert_key_press_then_release_to_write,
+    merge_consecutive_mouse_press_then_release_to_click,
+    merge_consecutive_mouse_clicks_to_multi_click,
+    merge_consecutive_key_press_then_release_to_write,
     merge_consecutive_write_events,
     merge_consecutive_scroll_events,
 )
