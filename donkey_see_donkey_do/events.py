@@ -310,7 +310,7 @@ class WriteEvent(BaseEvent):
             )
         )
 
-    def append(self, other_event: "WriteEvent") -> None:
+    def update_with(self, other_event: "WriteEvent") -> None:
         """
         Append ``other_event``'s keys onto the end of the current event's keys.  Additionally, update the timestamps
         based on ``other_event``'s timestamps:

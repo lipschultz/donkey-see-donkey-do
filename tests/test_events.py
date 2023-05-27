@@ -806,7 +806,7 @@ class TestWriteEvent:
         first_click = events.WriteEvent(timestamp=first_timestamp, keys="a")
         second_click = events.WriteEvent(timestamp=second_timestamp, keys="b")
 
-        first_click.append(second_click)
+        first_click.update_with(second_click)
 
         assert first_click == events.WriteEvent(
             timestamp=first_timestamp,
@@ -822,7 +822,7 @@ class TestWriteEvent:
         first_write = events.WriteEvent(timestamp=later_timestamp, keys="a")
         second_write = events.WriteEvent(timestamp=earlier_timestamp, keys="b")
 
-        first_write.append(second_write)
+        first_write.update_with(second_write)
 
         assert first_write == events.WriteEvent(
             timestamp=earlier_timestamp,
@@ -840,7 +840,7 @@ class TestWriteEvent:
         first_event = events.WriteEvent(timestamp=timestamp_1, keys=["a", "b"], last_timestamp=timestamp_4)
         second_event = events.WriteEvent(timestamp=timestamp_2, keys=["c", "d"], last_timestamp=timestamp_3)
 
-        first_event.append(second_event)
+        first_event.update_with(second_event)
 
         assert first_event == events.WriteEvent(
             timestamp=timestamp_1,
