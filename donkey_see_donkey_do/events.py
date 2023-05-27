@@ -181,6 +181,8 @@ class ClickEvent(MouseButtonEvent):
     @classmethod
     def from_mouse_button_event(cls, mouse_button_event: MouseButtonEvent) -> "ClickEvent":
         """Given a mouse button event, create a ClickEvent."""
+        if isinstance(mouse_button_event, ClickEvent):
+            return mouse_button_event.copy()
         return ClickEvent(
             timestamp=mouse_button_event.timestamp,
             screenshot=mouse_button_event.screenshot,

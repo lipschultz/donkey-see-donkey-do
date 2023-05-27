@@ -317,6 +317,15 @@ class TestClickEvent:
                 assert subject.action == "click"
 
     @staticmethod
+    def test_copied_click_event_returned_when_creating_click_event_using_from_mouse_button_event_and_passing_click():
+        click = events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1))
+
+        subject = events.ClickEvent.from_mouse_button_event(click)
+
+        assert subject is not click
+        assert subject == click
+
+    @staticmethod
     def test_event_serializes():
         subject = events.ClickEvent(button=MouseButton.LEFT, location=Point(1, 1))
 
