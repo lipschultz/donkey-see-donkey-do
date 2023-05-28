@@ -195,6 +195,20 @@ ALL_MERGE_CONSECUTIVE_EVENTS: Tuple[MergeConsecutiveEventCallableType, ...] = (
 )
 
 
+def merge_consecutive(
+    first_event: BaseEvent,
+    second_event: BaseEvent,
+    merge_consecutive_functions: Iterable[MergeConsecutiveEventCallableType] = ALL_MERGE_CONSECUTIVE_EVENTS,
+) -> List[BaseEvent]:
+    for merger in merge_consecutive_functions:
+        result_events = merger(first_event, second_event)
+        if len(result_events) == 1:
+            # The events have been merged
+            return result_events
+        first_event, second_event = result_events
+    return [first_event, second_event]
+
+
 def merge_consecutive_events(events: Events, event_mergers: Iterable[MergeConsecutiveEventCallableType]) -> Events:
     """
     Iterate over the events in ``event``, merging events according to the functions in ``event_mergers``.
@@ -213,14 +227,10 @@ def merge_consecutive_events(events: Events, event_mergers: Iterable[MergeConsec
 
     final_events = [events[0]]
     for event in events[1:]:  # type: BaseEvent
-        for merger in event_mergers:
-            result_events = merger(final_events[-1], event)
-            if len(result_events) == 1:
-                # The events have been merged
-                final_events[-1] = result_events[0]
-                event = None
-                break
-
-        if event is not None:
+        result_events = merge_consecutive(final_events[-1], event, event_mergers)
+        if len(result_events) == 1:
+            # The events have been merged
+            final_events[-1] = result_events[0]
+        else:
             final_events.append(event)
     return Events.from_iterable(final_events)

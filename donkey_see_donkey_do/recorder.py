@@ -1,4 +1,4 @@
-from typing import Callable, Union
+from typing import Callable, List, Union
 
 import pyautogui
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -6,7 +6,15 @@ from PIL import Image
 from pynput import keyboard, mouse
 from pynput.mouse import Button
 
-from donkey_see_donkey_do.events import Events, KeyboardEvent, MouseButtonEvent, ScrollEvent, StateSnapshotEvent
+from donkey_see_donkey_do import simplify
+from donkey_see_donkey_do.events import (
+    BaseEvent,
+    Events,
+    KeyboardEvent,
+    MouseButtonEvent,
+    ScrollEvent,
+    StateSnapshotEvent,
+)
 
 
 class Recorder:
@@ -93,10 +101,18 @@ class Recorder:
 
 
 class SimplifyingRecorder(Recorder):
-    def __init__(self, simplifier: Callable[[Events], Events], snapshot_frequency: Union[int, float] = 1):
+    def __init__(
+        self,
+        merge_consecutive_simplifier: Callable[[BaseEvent, BaseEvent], List[BaseEvent]] = simplify.merge_consecutive,
+        snapshot_frequency: Union[int, float] = 1,
+    ):
         super().__init__(snapshot_frequency=snapshot_frequency)
-        self.simplifier = simplifier
+        self.merge_consecutive_simplifier = merge_consecutive_simplifier
 
     def _append_event(self, event):
-        super()._append_event(event)
-        self.recorded_events = self.simplifier(self.recorded_events)
+        result_events = self.merge_consecutive_simplifier(self.recorded_events[-1], event)
+        if len(result_events) == 1:
+            # The events have been merged
+            self.recorded_events[-1] = result_events[0]
+        else:
+            super()._append_event(event)

@@ -10,7 +10,7 @@ from typing import Iterable, List, Literal, Optional, Union
 import pyautogui
 import pydantic
 from PIL import Image
-from pin_the_tail.interaction import KeysToPress, MouseButton, SpecialKey
+from pin_the_tail.interaction import Keyboard, KeysToPress, Mouse, MouseButton, SpecialKey
 from pin_the_tail.location import Point
 from pydantic import BaseModel, Field, PositiveInt
 from pynput import keyboard
@@ -81,6 +81,9 @@ class BaseEvent(BaseModel):
     def duration(self) -> float:
         return (self.last_timestamp_or_first - self.timestamp).total_seconds()
 
+    def replay(self, duration: float = 0) -> None:
+        raise NotImplementedError
+
     class Config:
         # pylint: disable=too-few-public-methods
         arbitrary_types_allowed = True
@@ -122,6 +125,16 @@ class BaseMouseEvent(BaseEvent):
             raise TypeError(f"location must be of type Point or a 2-tuple; received {value!r}")
 
         return value
+
+    def _replay_move_mouse(self, duration: float):
+        Mouse().move_to(self.location, duration=duration)
+
+
+class MouseMoveEvent(BaseMouseEvent):
+    action: Literal["move"] = "move"
+
+    def replay(self, duration: float = 0) -> None:
+        self._replay_move_mouse(duration)
 
 
 class MouseButtonEvent(BaseMouseEvent):
@@ -172,6 +185,16 @@ class MouseButtonEvent(BaseMouseEvent):
         """Get the pyautogui representation of the button pressed."""
         return self.button.pyautogui_button
 
+    def replay(self, duration: float = 0) -> None:
+        self._replay_move_mouse(duration)
+        mouse = Mouse()
+        if self.action == "press":
+            mouse.button_press(self.button)
+        elif self.action == "release":
+            mouse.button_release(self.button)
+        elif self.action == "click":
+            mouse.click(self.button, 1)
+
 
 class ClickEvent(MouseButtonEvent):
     action: Literal["click"] = "click"
@@ -214,6 +237,11 @@ class ClickEvent(MouseButtonEvent):
         self.last_timestamp = max(options_for_last_timestamp)
         self.timestamp = new_timestamp
 
+    def replay(self, duration: float = 0) -> None:
+        self._replay_move_mouse(duration)
+        mouse = Mouse()
+        mouse.click(self.button, self.n_clicks)  # FIXME: self.duration should be used to determine the click speed
+
 
 class ScrollEvent(BaseMouseEvent):
     # pylint: disable=too-few-public-methods
@@ -245,6 +273,14 @@ class ScrollEvent(BaseMouseEvent):
         self.last_timestamp = max(options_for_last_timestamp)
         self.timestamp = new_timestamp
 
+    def replay(self, duration: float = 0) -> None:
+        self._replay_move_mouse(duration)
+        mouse = Mouse()
+        # FIXME: self.duration should be used to determine the scroll speed
+        # FIXME: this scrolling would, ideally, be done in parallel but should be interleaved
+        mouse.scroll_horizontal(self.scroll.dx)
+        mouse.scroll_vertical(self.scroll.dy)
+
 
 class KeyboardEvent(BaseEvent):
     device: Literal["keyboard"] = "keyboard"
@@ -262,6 +298,12 @@ class KeyboardEvent(BaseEvent):
         if isinstance(self.key, str):
             return self.key
         return self.key.pyautogui_key
+
+    def replay(self, duration: float = 0) -> None:
+        if self.action == "press":
+            Keyboard().key_press(self.key)
+        else:
+            Keyboard().key_press(self.key)
 
 
 class WriteEvent(BaseEvent):
@@ -329,8 +371,13 @@ class WriteEvent(BaseEvent):
         self.last_timestamp = max(options_for_last_timestamp)
         self.timestamp = new_timestamp
 
+    def replay(self, duration: float = 0) -> None:
+        self.keys.write(len(self.keys) / duration)
 
-RealEventType = Union[StateSnapshotEvent, ClickEvent, MouseButtonEvent, ScrollEvent, KeyboardEvent, WriteEvent]
+
+RealEventType = Union[
+    StateSnapshotEvent, ClickEvent, MouseMoveEvent, MouseButtonEvent, ScrollEvent, KeyboardEvent, WriteEvent
+]
 
 
 class Events(BaseModel):
@@ -352,6 +399,9 @@ class Events(BaseModel):
 
     def __getitem__(self, item: int) -> RealEventType:
         return self.__root__[item]
+
+    def __setitem__(self, key, value: RealEventType):
+        self.__root__[key] = value
 
     def __delitem__(self, key):
         del self.__root__[key]
