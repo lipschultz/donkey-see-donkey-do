@@ -22,8 +22,11 @@ def drop_consecutive_state_snapshots(first_event: BaseEvent, second_event: BaseE
     return [first_event, second_event]
 
 
+# TODO: drop snapshots between press and release if press and release would otherwise be merged
+
+
 def merge_consecutive_mouse_press_then_release_to_click(
-    first_event: BaseEvent, second_event: BaseEvent, max_seconds: float = 0.2, max_pixels: int = 5
+    first_event: BaseEvent, second_event: BaseEvent, max_seconds: float = 0.3, max_pixels: int = 5
 ) -> List[BaseEvent]:
     """
     Convert a mouse press event followed by release event into a click event, as long as the events are consecutive,
@@ -88,7 +91,7 @@ def merge_consecutive_mouse_clicks_to_multi_click(
 
 
 def merge_consecutive_key_press_then_release_to_write(
-    first_event: BaseEvent, second_event: BaseEvent, max_seconds: float = 0.15
+    first_event: BaseEvent, second_event: BaseEvent, max_seconds: float = 0.25
 ) -> List[BaseEvent]:
     """
     Convert a key press event followed by release event into a write event, as long as the events are consecutive and

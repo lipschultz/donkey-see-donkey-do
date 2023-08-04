@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 from typing import Iterable, List
 
@@ -20,6 +21,14 @@ class Action:
     event: RealEventType
     wait_for: float
     duration: float
+
+    def wait(self) -> None:
+        if self.wait_for > 0:
+            time.sleep(self.wait_for)
+
+    def play(self) -> None:
+        self.wait()
+        self.event.replay(self.duration)
 
 
 class Actions(BaseModel):
@@ -51,6 +60,10 @@ class Actions(BaseModel):
     def __iter__(self) -> Iterable[Action]:
         return iter(self.__root__)
 
+    def play(self):
+        for action in self:
+            action.play()
+
     class Config:
         # pylint: disable=too-few-public-methods
         arbitrary_types_allowed = True
@@ -59,6 +72,30 @@ class Actions(BaseModel):
 
 
 def to_actions_using_time(events: Events) -> Actions:
+    actions = []
+    last_timestamp = None
+    for event in events:  # type: RealEventType
+        seconds_since_last_event = 0 if last_timestamp is None else (event.timestamp - last_timestamp).total_seconds()
+        last_timestamp = event.last_timestamp_or_first
+
+        if isinstance(event, StateSnapshotEvent):
+            # This is for mouse movement, which might be inferred from other events
+            actions.append(
+                Action(event=MouseMoveEvent(location=event.location), wait_for=0, duration=seconds_since_last_event)
+            )
+            seconds_since_last_event = 0
+
+        if isinstance(event, MouseButtonEvent) and event.action == "click":
+            event = ClickEvent.from_mouse_button_event(event)
+
+        if not isinstance(event, StateSnapshotEvent):
+            action = Action(event=event, wait_for=seconds_since_last_event, duration=event.duration)
+            actions.append(action)
+
+    return Actions.from_iterable(actions)
+
+
+def to_actions_using_screenshots(events: Events) -> Actions:
     actions = []
     last_timestamp = None
     for event in events:  # type: RealEventType

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable, List, Literal, Optional, Union
+from typing import Iterable, List, Literal, Optional, Union, Any, Dict
 
 import pyautogui
 import pydantic
@@ -84,6 +84,17 @@ class BaseEvent(BaseModel):
     def replay(self, duration: float = 0) -> None:
         raise NotImplementedError
 
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = {"timestamp": self.timestamp.isoformat()}
+        if isinstance(self.screenshot, Image.Image):
+            mapping["screenshot"] = "<image>"
+        else:
+            mapping["screenshot"] = str(self.screenshot)
+        return mapping
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({', '.join(f'{key}={value}' for key, value in sorted(self._map_for_str().items()))})"
+
     class Config:
         # pylint: disable=too-few-public-methods
         arbitrary_types_allowed = True
@@ -102,6 +113,12 @@ class StateSnapshotEvent(BaseEvent):
     screenshot: Union[Image.Image, Path]
     location: Point
 
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = super()._map_for_str()
+        mapping["device"] = self.device
+        mapping["location"] = str(self.location)
+        return mapping
+
 
 class BaseMouseEvent(BaseEvent):
     # pylint: disable=too-few-public-methods
@@ -112,6 +129,12 @@ class BaseMouseEvent(BaseEvent):
 
     device: Literal["mouse"] = "mouse"
     location: Point
+
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = super()._map_for_str()
+        mapping["device"] = self.device
+        mapping["location"] = str(self.location)
+        return mapping
 
     @pydantic.validator("location")
     def convert_location_to_point(cls, value) -> Point:
@@ -133,6 +156,11 @@ class BaseMouseEvent(BaseEvent):
 class MouseMoveEvent(BaseMouseEvent):
     action: Literal["move"] = "move"
 
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = super()._map_for_str()
+        mapping["action"] = self.action
+        return mapping
+
     def replay(self, duration: float = 0) -> None:
         self._replay_move_mouse(duration)
 
@@ -140,6 +168,12 @@ class MouseMoveEvent(BaseMouseEvent):
 class MouseButtonEvent(BaseMouseEvent):
     action: str
     button: MouseButton
+
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = super()._map_for_str()
+        mapping["action"] = self.action
+        mapping["button"] = str(self.button)
+        return mapping
 
     @pydantic.validator("action")
     def action_is_valid_value(cls, value) -> str:
@@ -213,6 +247,12 @@ class ClickEvent(MouseButtonEvent):
             button=mouse_button_event.button,
         )
 
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = super()._map_for_str()
+        mapping["n_clicks"] = self.n_clicks
+        mapping["last_timestamp"] = self.last_timestamp.isoformat() if self.last_timestamp else None
+        return mapping
+
     @property
     def last_timestamp_or_first(self) -> datetime:
         """Return ``last_timestamp``, or ``timestamp`` if ``last_timestamp`` is ``None``"""
@@ -248,6 +288,12 @@ class ScrollEvent(BaseMouseEvent):
     action: Literal["scroll"] = "scroll"
     scroll: PointChange
     last_timestamp: Optional[datetime] = None
+
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = super()._map_for_str()
+        mapping["scroll"] = self.scroll
+        mapping["last_timestamp"] = self.last_timestamp.isoformat() if self.last_timestamp else None
+        return mapping
 
     @property
     def last_timestamp_or_first(self) -> datetime:
@@ -287,6 +333,92 @@ class KeyboardEvent(BaseEvent):
     action: Literal["press", "release"]
     key: KeyType
 
+    @pydantic.validator("key", pre=True)
+    def key_is_converted_to_keytype(cls, value) -> KeyType:
+        if isinstance(value, (str, SpecialKey)):
+            return value
+
+        if isinstance(value, keyboard.Key):
+            key_to_specialkey = {
+                keyboard.Key.alt: SpecialKey.ALT,
+                keyboard.Key.alt_l: SpecialKey.ALT_LEFT,
+                keyboard.Key.alt_r: SpecialKey.ALT_RIGHT,
+                # #: The AltGr key. This is a modifier.
+                # alt_gr = 0
+                keyboard.Key.backspace: SpecialKey.BACKSPACE,
+                keyboard.Key.caps_lock: SpecialKey.CAPS_LOCK,
+                #: The command button. On *PC* platforms, this corresponds to the
+                #: Super key or Windows key, and on *Mac* it corresponds to the Command
+                #: key. This may be a modifier.
+                keyboard.Key.cmd: SpecialKey.WIN,
+                keyboard.Key.cmd_l: SpecialKey.WIN_LEFT,
+                keyboard.Key.cmd_r: SpecialKey.WIN_RIGHT,
+                keyboard.Key.ctrl: SpecialKey.CTRL,
+                keyboard.Key.ctrl_l: SpecialKey.CTRL_LEFT,
+                keyboard.Key.ctrl_r: SpecialKey.CTRL_RIGHT,
+                keyboard.Key.delete: SpecialKey.DELETE,
+                keyboard.Key.down: SpecialKey.DOWN,
+                keyboard.Key.end: SpecialKey.END,
+                keyboard.Key.enter: SpecialKey.ENTER,
+                keyboard.Key.esc: SpecialKey.ESC,
+                keyboard.Key.f1: SpecialKey.F1,
+                keyboard.Key.f2: SpecialKey.F2,
+                keyboard.Key.f3: SpecialKey.F3,
+                keyboard.Key.f4: SpecialKey.F4,
+                keyboard.Key.f5: SpecialKey.F5,
+                keyboard.Key.f6: SpecialKey.F6,
+                keyboard.Key.f7: SpecialKey.F7,
+                keyboard.Key.f8: SpecialKey.F8,
+                keyboard.Key.f9: SpecialKey.F9,
+                keyboard.Key.f10: SpecialKey.F10,
+                keyboard.Key.f11: SpecialKey.F11,
+                keyboard.Key.f12: SpecialKey.F12,
+                keyboard.Key.f13: SpecialKey.F13,
+                keyboard.Key.f14: SpecialKey.F14,
+                keyboard.Key.f15: SpecialKey.F15,
+                keyboard.Key.f16: SpecialKey.F16,
+                keyboard.Key.f17: SpecialKey.F17,
+                keyboard.Key.f18: SpecialKey.F18,
+                keyboard.Key.f19: SpecialKey.F19,
+                keyboard.Key.f20: SpecialKey.F20,
+                keyboard.Key.home: SpecialKey.HOME,
+                keyboard.Key.left: SpecialKey.LEFT,
+                keyboard.Key.page_down: SpecialKey.PAGE_DOWN,
+                keyboard.Key.page_up: SpecialKey.PAGE_UP,
+                keyboard.Key.right: SpecialKey.RIGHT,
+                keyboard.Key.shift: SpecialKey.SHIFT,
+                keyboard.Key.shift_l: SpecialKey.SHIFT_LEFT,
+                keyboard.Key.shift_r: SpecialKey.SHIFT_RIGHT,
+                keyboard.Key.space: SpecialKey.SPACE,
+                keyboard.Key.tab: SpecialKey.TAB,
+                keyboard.Key.up: SpecialKey.UP,
+                keyboard.Key.media_play_pause: SpecialKey.PLAY_PAUSE,
+                keyboard.Key.media_volume_mute: SpecialKey.VOLUME_MUTE,
+                keyboard.Key.media_volume_down: SpecialKey.VOLUME_DOWN,
+                keyboard.Key.media_volume_up: SpecialKey.VOLUME_UP,
+                keyboard.Key.media_previous: SpecialKey.PREV_TRACK,
+                # keyboard.Key.media_next: SpecialKey.NEXT_TRACK,
+                keyboard.Key.insert: SpecialKey.INSERT,
+                #: The Menu key. This may be undefined for some platforms.
+                # keyboard.Key.menu: SpecialKey.,
+                keyboard.Key.num_lock: SpecialKey.NUM_LOCK,
+                keyboard.Key.pause: SpecialKey.PAUSE,
+                keyboard.Key.print_screen: SpecialKey.PRINT_SCREEN,
+                keyboard.Key.scroll_lock: SpecialKey.SCROLL_LOCK,
+            }
+            try:
+                return key_to_specialkey[value]
+            except KeyError:
+                raise ValueError(f"Unrecognized value for key; received {value!r}")
+        raise ValueError(f"Unrecognized value for key; received {value!r}")
+
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = super()._map_for_str()
+        mapping["device"] = self.device
+        mapping["action"] = self.action
+        mapping["key"] = self.key
+        return mapping
+
     @property
     def pynput_key(self) -> Union[keyboard.Key, str]:
         """Get the pynput representation of the key pressed."""
@@ -321,6 +453,14 @@ class WriteEvent(BaseEvent):
             value = KeysToPress(value)
 
         return value
+
+    def _map_for_str(self) -> Dict[str, Any]:
+        mapping = super()._map_for_str()
+        mapping["device"] = self.device
+        mapping["action"] = self.action
+        mapping["keys"] = self.keys
+        mapping["last_timestamp"] = self.last_timestamp.isoformat() if self.last_timestamp else None
+        return mapping
 
     @classmethod
     def from_keyboard_event(cls, keyboard_event: KeyboardEvent) -> "WriteEvent":
@@ -408,6 +548,17 @@ class Events(BaseModel):
 
     def __iter__(self):
         return iter(self.__root__)
+
+    def to_string(self) -> str:
+        return "[\n" + "\n".join(f" {i:3d}" + str(event) for i, event in enumerate(self)) + "\n]"
+
+    def to_json(self, filepath: Union[str, Path]):
+        with open(filepath, "w") as fp:
+            fp.write(self.json())
+
+    @classmethod
+    def from_json(cls, filepath: Union[str, Path]) -> "Events":
+
 
     class Config:
         # pylint: disable=too-few-public-methods

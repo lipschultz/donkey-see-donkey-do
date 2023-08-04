@@ -19,7 +19,7 @@ from donkey_see_donkey_do.events import (
 
 class Recorder:
     def __init__(self, snapshot_frequency: Union[int, float] = 1):
-        self.recorded_events = Events()
+        self.events = Events()
         self.snapshot_frequency = snapshot_frequency
 
         self._mouse_listener = None
@@ -27,13 +27,13 @@ class Recorder:
         self._state_snapshot_scheduler = None
 
     def clear_events(self) -> None:
-        self.recorded_events = Events()
+        self.events = Events()
 
     def get_events(self) -> Events:
-        return self.recorded_events
+        return self.events
 
     def _append_event(self, event):
-        self.recorded_events.append(event)
+        self.events.append(event)
 
     def _get_screenshot(self) -> Image.Image:
         return pyautogui.screenshot()
@@ -43,7 +43,7 @@ class Recorder:
             screenshot=self._get_screenshot(),
             location=(x, y),
             action="press" if is_press else "release",
-            button=button.value,
+            button=button,
         )
         self._append_event(event)
 
@@ -56,6 +56,8 @@ class Recorder:
         self._append_event(event)
 
     def _on_key_press(self, key):
+        if not isinstance(key, keyboard.Key):
+            key = str(key)
         event = KeyboardEvent(
             screenshot=self._get_screenshot(),
             key=key,
@@ -64,6 +66,8 @@ class Recorder:
         self._append_event(event)
 
     def _on_key_release(self, key):
+        if not isinstance(key, keyboard.Key):
+            key = str(key)
         event = KeyboardEvent(
             screenshot=self._get_screenshot(),
             key=key,
@@ -110,9 +114,12 @@ class SimplifyingRecorder(Recorder):
         self.merge_consecutive_simplifier = merge_consecutive_simplifier
 
     def _append_event(self, event):
-        result_events = self.merge_consecutive_simplifier(self.recorded_events[-1], event)
-        if len(result_events) == 1:
-            # The events have been merged
-            self.recorded_events[-1] = result_events[0]
-        else:
+        if len(self.events) == 0:
             super()._append_event(event)
+        else:
+            result_events = self.merge_consecutive_simplifier(self.events[-1], event)
+            if len(result_events) == 1:
+                # The events have been merged
+                self.events[-1] = result_events[0]
+            else:
+                super()._append_event(event)
